@@ -229,13 +229,21 @@ function App() {
           </PanelHeader>
           <div className="space-y-2 overflow-y-auto p-3">
             {(inventory?.sources ?? []).map((source) => (
-              <button
+              <div
                 key={source.id}
+                role="button"
+                tabIndex={0}
                 className={cn(
-                  "w-full rounded-md border p-3 text-left transition hover:bg-slate-50",
+                  "w-full cursor-pointer rounded-md border p-3 text-left transition hover:bg-slate-50",
                   selectedSourceId === source.id ? "border-blue-300 bg-blue-50" : "border-border bg-white",
                 )}
                 onClick={() => setSelectedSourceId(source.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedSourceId(source.id);
+                  }
+                }}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -263,7 +271,7 @@ function App() {
                     <Trash2 className="h-3.5 w-3.5" />
                   </SmallAction>
                 </div>
-              </button>
+              </div>
             ))}
             <button
               className={cn(
