@@ -76,6 +76,7 @@ type Skill struct {
 	Status           SkillStatus      `json:"status"`
 	HasSymlink       bool             `json:"hasSymlink"`
 	SymlinkTarget    string           `json:"symlinkTarget,omitempty"`
+	IsActive         bool             `json:"isActive"`
 	ValidationErrors []string         `json:"validationErrors,omitempty"`
 	Files            []string         `json:"files,omitempty"`
 	Description      string           `json:"description,omitempty"`

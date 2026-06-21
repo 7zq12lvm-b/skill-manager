@@ -137,6 +137,7 @@ export namespace skillmgr {
 	    status: string;
 	    hasSymlink: boolean;
 	    symlinkTarget?: string;
+	    isActive: boolean;
 	    validationErrors?: string[];
 	    files?: string[];
 	    description?: string;
@@ -163,6 +164,7 @@ export namespace skillmgr {
 	        this.status = source["status"];
 	        this.hasSymlink = source["hasSymlink"];
 	        this.symlinkTarget = source["symlinkTarget"];
+	        this.isActive = source["isActive"];
 	        this.validationErrors = source["validationErrors"];
 	        this.files = source["files"];
 	        this.description = source["description"];

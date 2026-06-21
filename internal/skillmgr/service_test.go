@@ -198,6 +198,39 @@ func TestDuplicateSkillNamesAreConflicts(t *testing.T) {
 	}
 }
 
+func TestDuplicateSkillActiveSourceIsStillMarkedActive(t *testing.T) {
+	root := t.TempDir()
+	sourceA := filepath.Join(root, "source-a")
+	sourceB := filepath.Join(root, "source-b")
+	target := filepath.Join(root, "target")
+	activeSkill := filepath.Join(sourceA, "code-review")
+	inactiveSkill := filepath.Join(sourceB, "code-review")
+	mustWrite(t, filepath.Join(activeSkill, "SKILL.md"), "# active\n")
+	mustWrite(t, filepath.Join(inactiveSkill, "SKILL.md"), "# inactive\n")
+	mustMkdir(t, target)
+	mustSymlink(t, activeSkill, filepath.Join(target, "code-review"))
+
+	inventory, err := NewService().Scan(context.Background(), Config{
+		TargetDir: target,
+		Sources: []SkillSourceConfig{
+			{ID: "a", Path: sourceA, Enabled: true},
+			{ID: "b", Path: sourceB, Enabled: true},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, skill := range inventory.Skills {
+		if skill.SourcePath == activeSkill && !skill.IsActive {
+			t.Fatalf("expected active duplicate skill to be marked active")
+		}
+		if skill.SourcePath == inactiveSkill && skill.IsActive {
+			t.Fatalf("expected inactive duplicate skill not to be marked active")
+		}
+	}
+}
+
 func TestScanSkipsDotGitAndFoldersWithoutSkillFile(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "source")

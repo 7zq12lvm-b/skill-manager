@@ -196,6 +196,7 @@ func deriveStatuses(skills []Skill, targetDir string) {
 			skill := &skills[index]
 			skill.HasSymlink = hasSymlink
 			skill.SymlinkTarget = symlinkTarget
+			skill.IsActive = hasSymlink && samePath(symlinkTarget, skill.SourcePath)
 			if targetError != "" {
 				skill.Status = StatusError
 				skill.Error = targetError
@@ -205,7 +206,7 @@ func deriveStatuses(skills []Skill, targetDir string) {
 				skill.Status = StatusConflict
 			} else if !hasSymlink {
 				skill.Status = StatusDisabled
-			} else if samePath(symlinkTarget, skill.SourcePath) {
+			} else if skill.IsActive {
 				skill.Status = StatusSynced
 			} else {
 				skill.Status = StatusConflict

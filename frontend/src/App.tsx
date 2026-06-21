@@ -282,7 +282,7 @@ function App() {
                       <SkillSwitch
                         skill={skill}
                         onEnable={() => enableSkill(skill.id)}
-                        onDisable={() => requestDisable(skill)}
+                        onDisable={() => disableSkill(skill.id)}
                       />
                     </td>
                     <td className="px-3 py-2">
@@ -428,10 +428,7 @@ function SkillSwitch({
 }
 
 function isActiveSkill(skill: skillmgr.Skill) {
-  return (
-    skill.status === "synced" ||
-    (skill.status === "conflict" && skill.hasSymlink && skill.symlinkTarget === skill.sourcePath)
-  );
+  return skill.isActive || skill.status === "synced";
 }
 
 function SkillDetail({
