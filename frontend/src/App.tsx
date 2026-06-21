@@ -81,6 +81,8 @@ function App() {
   } = useSkillStore();
   const [addSourceOpen, setAddSourceOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sourceToEdit, setSourceToEdit] = useState<skillmgr.SkillSource>();
+  const [sourceToRemove, setSourceToRemove] = useState<skillmgr.SkillSource>();
   const [sourcePath, setSourcePath] = useState("");
   const [sourcePanelWidth, setSourcePanelWidth] = useState(() =>
     readStoredWidth(SOURCE_WIDTH_KEY, DEFAULT_SOURCE_WIDTH, MIN_SOURCE_WIDTH, MAX_SOURCE_WIDTH),
@@ -129,18 +131,6 @@ function App() {
     await addSource(sourcePath.trim());
     setSourcePath("");
     setAddSourceOpen(false);
-  }
-
-  async function requestRemoveSource(source: skillmgr.SkillSource) {
-    const ok = window.confirm(
-      `Remove ${source.alias || source.path} from scanning?\n\nSource files and existing symlinks will not be deleted.`,
-    );
-    if (ok) await removeSource(source.id);
-  }
-
-  async function requestRenameSource(source: skillmgr.SkillSource) {
-    const alias = window.prompt("Source alias", source.alias || "");
-    if (alias !== null) await renameSource(source.id, alias);
   }
 
   function startColumnResize(kind: "source" | "detail", event: React.PointerEvent) {
@@ -257,10 +247,10 @@ function App() {
                   <SmallAction title="Open" onClick={(event) => action(event, () => openPath(source.path))}>
                     <ExternalLink className="h-3.5 w-3.5" />
                   </SmallAction>
-                  <SmallAction title="Alias" onClick={(event) => action(event, () => requestRenameSource(source))}>
+                  <SmallAction title="Alias" onClick={(event) => action(event, () => setSourceToEdit(source))}>
                     <SlidersHorizontal className="h-3.5 w-3.5" />
                   </SmallAction>
-                  <SmallAction title="Remove" onClick={(event) => action(event, () => requestRemoveSource(source))}>
+                  <SmallAction title="Remove" onClick={(event) => action(event, () => setSourceToRemove(source))}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </SmallAction>
                 </div>
@@ -429,6 +419,28 @@ function App() {
           onSave={async (config) => {
             await saveConfig(config);
             setSettingsOpen(false);
+          }}
+        />
+      )}
+
+      {sourceToEdit && (
+        <SourceAliasModal
+          source={sourceToEdit}
+          onClose={() => setSourceToEdit(undefined)}
+          onSave={async (alias) => {
+            await renameSource(sourceToEdit.id, alias);
+            setSourceToEdit(undefined);
+          }}
+        />
+      )}
+
+      {sourceToRemove && (
+        <RemoveSourceModal
+          source={sourceToRemove}
+          onClose={() => setSourceToRemove(undefined)}
+          onRemove={async () => {
+            await removeSource(sourceToRemove.id);
+            setSourceToRemove(undefined);
           }}
         />
       )}
@@ -805,6 +817,99 @@ function SettingsModal({
             Cancel
           </Button>
           <Button onClick={() => onSave(config)}>Save</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function SourceAliasModal({
+  source,
+  onClose,
+  onSave,
+}: {
+  source: skillmgr.SkillSource;
+  onClose: () => void;
+  onSave: (alias: string) => Promise<void>;
+}) {
+  const [alias, setAlias] = useState(source.alias || "");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await onSave(alias.trim());
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title="Rename Source Alias" onClose={onClose}>
+      <div className="space-y-4">
+        <label className="block text-sm font-medium">
+          Alias
+          <input
+            value={alias}
+            onChange={(event) => setAlias(event.target.value)}
+            className="mt-2 h-9 w-full rounded-md border border-input px-3 text-sm"
+            placeholder={basename(source.path)}
+            autoFocus
+          />
+        </label>
+        <div className="rounded-md border border-border bg-slate-50 p-3 font-mono text-xs text-muted-foreground">
+          {source.path}
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? "Saving" : "Save"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function RemoveSourceModal({
+  source,
+  onClose,
+  onRemove,
+}: {
+  source: skillmgr.SkillSource;
+  onClose: () => void;
+  onRemove: () => Promise<void>;
+}) {
+  const [removing, setRemoving] = useState(false);
+
+  async function remove() {
+    setRemoving(true);
+    try {
+      await onRemove();
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  return (
+    <Modal title="Remove Source" onClose={onClose}>
+      <div className="space-y-4">
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          This removes the source from scanning only. Source files and existing symlinks will not be deleted.
+        </div>
+        <div>
+          <div className="text-sm font-medium">{source.alias || basename(source.path)}</div>
+          <div className="mt-1 break-all font-mono text-xs text-muted-foreground">{source.path}</div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose} disabled={removing}>
+            Cancel
+          </Button>
+          <Button onClick={remove} disabled={removing}>
+            {removing ? "Removing" : "Remove Source"}
+          </Button>
         </div>
       </div>
     </Modal>
