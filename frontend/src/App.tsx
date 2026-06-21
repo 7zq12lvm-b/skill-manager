@@ -402,8 +402,8 @@ function SkillSwitch({
   onEnable: () => void;
   onDisable: () => void;
 }) {
-  const checked = skill.status === "synced";
-  const disabled = ["invalid", "error", "conflict"].includes(skill.status);
+  const checked = isActiveSkill(skill);
+  const disabled = ["invalid", "error"].includes(skill.status) || (skill.status === "conflict" && !checked);
   return (
     <button
       title={checked ? "Disable" : "Enable"}
@@ -424,6 +424,13 @@ function SkillSwitch({
         )}
       />
     </button>
+  );
+}
+
+function isActiveSkill(skill: skillmgr.Skill) {
+  return (
+    skill.status === "synced" ||
+    (skill.status === "conflict" && skill.hasSymlink && skill.symlinkTarget === skill.sourcePath)
   );
 }
 
@@ -511,7 +518,7 @@ function SkillDetail({
           <Folder className="h-4 w-4" />
           Open
         </Button>
-        {skill.status === "synced" ? (
+        {isActiveSkill(skill) ? (
           <Button variant="outline" onClick={() => onDisable(skill)}>
             Disable
           </Button>
@@ -537,17 +544,11 @@ function SettingsModal({
   onSave: (config: skillmgr.Config) => Promise<void>;
 }) {
   const [config, setConfig] = useState(() => skillmgr.Config.createFrom(inventory.config));
-  const requiredFiles = config.validation.requiredFiles?.join(", ") ?? "";
   const updateConfig = (next: Partial<skillmgr.Config>) => {
     setConfig(skillmgr.Config.createFrom({ ...config, ...next }));
   };
   const updateScan = (next: Partial<skillmgr.ScanConfig>) => {
     updateConfig({ scan: skillmgr.ScanConfig.createFrom({ ...config.scan, ...next }) });
-  };
-  const updateValidation = (next: Partial<skillmgr.ValidationConfig>) => {
-    updateConfig({
-      validation: skillmgr.ValidationConfig.createFrom({ ...config.validation, ...next }),
-    });
   };
 
   return (
@@ -579,33 +580,12 @@ function SettingsModal({
             Watch source folders
           </label>
         </div>
-        <label className="block text-sm font-medium">
-          Validation mode
-          <select
-            value={config.validation.mode}
-            onChange={(event) => updateValidation({ mode: event.target.value })}
-            className="mt-2 h-9 w-full rounded-md border border-input bg-white px-3 text-sm"
-          >
-            <option value="loose">Loose</option>
-            <option value="strict">Strict: require SKILL.md</option>
-            <option value="custom">Custom required files</option>
-          </select>
-        </label>
-        <label className="block text-sm font-medium">
-          Required files
-          <input
-            value={requiredFiles}
-            onChange={(event) =>
-              updateValidation({
-                requiredFiles: event.target.value
-                  .split(",")
-                  .map((value) => value.trim())
-                  .filter(Boolean),
-              })
-            }
-            className="mt-2 h-9 w-full rounded-md border border-input px-3 text-sm"
-          />
-        </label>
+        <div className="block text-sm font-medium">
+          Skill detection
+          <div className="mt-2 rounded-md border border-border bg-slate-50 p-3 text-sm text-muted-foreground">
+            A folder is shown as a skill only when it contains `SKILL.md`.
+          </div>
+        </div>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             Cancel

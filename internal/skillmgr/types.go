@@ -106,9 +106,9 @@ func DefaultConfig() Config {
 	return Config{
 		TargetDir: expandHome("~/.agents/skills"),
 		Validation: ValidationConfig{
-			Mode:          ValidationLoose,
+			Mode:          ValidationStrict,
 			RequiredFiles: []string{"SKILL.md"},
-			ShowInvalid:   true,
+			ShowInvalid:   false,
 		},
 		Scan: ScanConfig{
 			WatchSourceFolders: true,

@@ -52,6 +52,9 @@ func (s *Service) Scan(_ context.Context, config Config) (Inventory, error) {
 			}
 			name := entry.Name()
 			sourcePath := filepath.Join(sourceConfig.Path, name)
+			if !hasSkillFile(sourcePath) {
+				continue
+			}
 			skill := Skill{
 				ID:            skillID(sourceConfig.ID, name),
 				Name:          name,
@@ -247,6 +250,11 @@ func validateSkill(skill *Skill, config ValidationConfig) {
 			skill.ValidationErrors = append(skill.ValidationErrors, err.Error())
 		}
 	}
+}
+
+func hasSkillFile(sourcePath string) bool {
+	info, err := os.Stat(filepath.Join(sourcePath, "SKILL.md"))
+	return err == nil && !info.IsDir()
 }
 
 func attachSkillMetadata(skill *Skill) {

@@ -55,12 +55,9 @@ func normalizeConfig(config Config) Config {
 		config.TargetDir = DefaultConfig().TargetDir
 	}
 	config.TargetDir = expandHome(config.TargetDir)
-	if config.Validation.Mode == "" {
-		config.Validation.Mode = ValidationLoose
-	}
-	if len(config.Validation.RequiredFiles) == 0 {
-		config.Validation.RequiredFiles = []string{"SKILL.md"}
-	}
+	config.Validation.Mode = ValidationStrict
+	config.Validation.RequiredFiles = []string{"SKILL.md"}
+	config.Validation.ShowInvalid = false
 	if config.ConflictHandling == "" {
 		config.ConflictHandling = "ask"
 	}

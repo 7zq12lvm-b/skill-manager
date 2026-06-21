@@ -13,6 +13,8 @@ func TestScanDiscoversFirstLevelSkillsAndDerivesStatuses(t *testing.T) {
 	target := filepath.Join(root, "target")
 	mustMkdir(t, filepath.Join(source, "summarize-pdf"))
 	mustMkdir(t, filepath.Join(source, "code-review", "nested"))
+	mustWrite(t, filepath.Join(source, "summarize-pdf", "SKILL.md"), "# summarize-pdf\n")
+	mustWrite(t, filepath.Join(source, "code-review", "SKILL.md"), "# code-review\n")
 	mustMkdir(t, target)
 	mustSymlink(t, filepath.Join(source, "summarize-pdf"), filepath.Join(target, "summarize-pdf"))
 
@@ -24,7 +26,7 @@ func TestScanDiscoversFirstLevelSkillsAndDerivesStatuses(t *testing.T) {
 			Alias:   "Local",
 			Enabled: true,
 		}},
-		Validation: ValidationConfig{Mode: ValidationLoose},
+		Validation: ValidationConfig{Mode: ValidationStrict},
 	}
 
 	inventory, err := NewService().Scan(context.Background(), config)
@@ -44,6 +46,7 @@ func TestScanIsReadOnly(t *testing.T) {
 	source := filepath.Join(root, "source")
 	target := filepath.Join(root, "target")
 	mustMkdir(t, filepath.Join(source, "code-review"))
+	mustWrite(t, filepath.Join(source, "code-review", "SKILL.md"), "# code-review\n")
 	mustMkdir(t, target)
 
 	config := Config{
@@ -53,7 +56,7 @@ func TestScanIsReadOnly(t *testing.T) {
 			Path:    source,
 			Enabled: true,
 		}},
-		Validation: ValidationConfig{Mode: ValidationLoose},
+		Validation: ValidationConfig{Mode: ValidationStrict},
 	}
 
 	if _, err := NewService().Scan(context.Background(), config); err != nil {
@@ -157,7 +160,9 @@ func TestStrictValidationMarksMissingSkillFileInvalid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertSkillStatus(t, inventory, "broken-skill", StatusInvalid)
+	if inventory.Summary.SkillsFound != 0 {
+		t.Fatalf("expected folder without SKILL.md to be hidden, got %d skills", inventory.Summary.SkillsFound)
+	}
 }
 
 func TestDuplicateSkillNamesAreConflicts(t *testing.T) {
@@ -167,6 +172,8 @@ func TestDuplicateSkillNamesAreConflicts(t *testing.T) {
 	target := filepath.Join(root, "target")
 	mustMkdir(t, filepath.Join(sourceA, "code-review"))
 	mustMkdir(t, filepath.Join(sourceB, "code-review"))
+	mustWrite(t, filepath.Join(sourceA, "code-review", "SKILL.md"), "# code-review\n")
+	mustWrite(t, filepath.Join(sourceB, "code-review", "SKILL.md"), "# code-review\n")
 
 	inventory, err := NewService().Scan(context.Background(), Config{
 		TargetDir: target,
@@ -174,7 +181,7 @@ func TestDuplicateSkillNamesAreConflicts(t *testing.T) {
 			{ID: "a", Path: sourceA, Enabled: true},
 			{ID: "b", Path: sourceB, Enabled: true},
 		},
-		Validation: ValidationConfig{Mode: ValidationLoose},
+		Validation: ValidationConfig{Mode: ValidationStrict},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -189,6 +196,32 @@ func TestDuplicateSkillNamesAreConflicts(t *testing.T) {
 	if conflicts != 2 {
 		t.Fatalf("expected both duplicate skills to be conflicts, got %d", conflicts)
 	}
+}
+
+func TestScanSkipsDotGitAndFoldersWithoutSkillFile(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	mustMkdir(t, filepath.Join(source, ".git"))
+	mustMkdir(t, filepath.Join(source, "notes"))
+	mustMkdir(t, filepath.Join(source, "real-skill"))
+	mustWrite(t, filepath.Join(source, "real-skill", "SKILL.md"), "# real skill\n")
+
+	inventory, err := NewService().Scan(context.Background(), Config{
+		TargetDir: filepath.Join(root, "target"),
+		Sources: []SkillSourceConfig{{
+			ID:      "local",
+			Path:    source,
+			Enabled: true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if inventory.Summary.SkillsFound != 1 {
+		t.Fatalf("expected only folders with SKILL.md to be shown, got %d", inventory.Summary.SkillsFound)
+	}
+	assertSkillStatus(t, inventory, "real-skill", StatusDisabled)
 }
 
 func assertSkillStatus(t *testing.T, inventory Inventory, name string, status SkillStatus) {
@@ -214,6 +247,16 @@ func mustMkdir(t *testing.T, path string) {
 func mustSymlink(t *testing.T, oldname, newname string) {
 	t.Helper()
 	if err := os.Symlink(oldname, newname); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustWrite(t *testing.T, path string, data string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
