@@ -80,12 +80,27 @@ type Skill struct {
 	ValidationErrors []string         `json:"validationErrors,omitempty"`
 	Files            []string         `json:"files,omitempty"`
 	Description      string           `json:"description,omitempty"`
+	Manifest         *SkillManifest   `json:"manifest,omitempty"`
 	PreviewFile      string           `json:"previewFile,omitempty"`
 	Preview          string           `json:"preview,omitempty"`
 	UpdatedAt        string           `json:"updatedAt,omitempty"`
 	LastScannedAt    string           `json:"lastScannedAt,omitempty"`
 	ConflictSources  []ConflictSource `json:"conflictSources,omitempty"`
 	Error            string           `json:"error,omitempty"`
+}
+
+type SkillManifest struct {
+	Name                   string            `json:"name,omitempty"`
+	Description            string            `json:"description,omitempty"`
+	License                string            `json:"license,omitempty"`
+	Compatibility          string            `json:"compatibility,omitempty"`
+	Metadata               map[string]string `json:"metadata,omitempty"`
+	AllowedTools           string            `json:"allowedTools,omitempty"`
+	WhenToUse              string            `json:"whenToUse,omitempty"`
+	DisableModelInvocation *bool             `json:"disableModelInvocation,omitempty"`
+	UserInvocable          *bool             `json:"userInvocable,omitempty"`
+	ArgumentHint           string            `json:"argumentHint,omitempty"`
+	Arguments              any               `json:"arguments,omitempty"`
 }
 
 type ConflictSource struct {

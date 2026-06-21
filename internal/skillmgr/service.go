@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Service struct{}
@@ -309,7 +311,16 @@ func attachSkillMetadata(skill *Skill) {
 		text := string(content)
 		skill.PreviewFile = previewFile
 		skill.Preview = trimPreview(text)
-		skill.Description = extractDescription(text)
+		if previewFile == "SKILL.md" {
+			manifest := parseSkillManifest(text)
+			if manifest != nil {
+				skill.Manifest = manifest
+				skill.Description = manifest.Description
+			}
+		}
+		if skill.Description == "" {
+			skill.Description = extractDescription(text)
+		}
 		return
 	}
 }
@@ -423,4 +434,141 @@ func extractDescription(content string) string {
 		}
 	}
 	return ""
+}
+
+func parseSkillManifest(content string) *SkillManifest {
+	frontmatter, ok := extractFrontmatter(content)
+	if !ok {
+		return nil
+	}
+	var raw map[string]any
+	if err := yaml.Unmarshal([]byte(frontmatter), &raw); err != nil {
+		return nil
+	}
+	manifest := &SkillManifest{
+		Name:                   getManifestString(raw, "name"),
+		Description:            getManifestString(raw, "description"),
+		License:                getManifestString(raw, "license"),
+		Compatibility:          getManifestString(raw, "compatibility"),
+		Metadata:               getManifestStringMap(raw, "metadata"),
+		AllowedTools:           getManifestString(raw, "allowedTools", "allowed-tools", "allowed_tools"),
+		WhenToUse:              getManifestString(raw, "whenToUse", "when-to-use", "when_to_use"),
+		DisableModelInvocation: getManifestBool(raw, "disableModelInvocation", "disable-model-invocation", "disable_model_invocation"),
+		UserInvocable:          getManifestBool(raw, "userInvocable", "user-invocable", "user_invocable"),
+		ArgumentHint:           getManifestString(raw, "argumentHint", "argument-hint", "argument_hint"),
+		Arguments:              getManifestArguments(raw, "arguments"),
+	}
+	if manifest.Name == "" &&
+		manifest.Description == "" &&
+		manifest.License == "" &&
+		manifest.Compatibility == "" &&
+		len(manifest.Metadata) == 0 &&
+		manifest.AllowedTools == "" &&
+		manifest.WhenToUse == "" &&
+		manifest.DisableModelInvocation == nil &&
+		manifest.UserInvocable == nil &&
+		manifest.ArgumentHint == "" &&
+		manifest.Arguments == nil {
+		return nil
+	}
+	return manifest
+}
+
+func extractFrontmatter(content string) (string, bool) {
+	content = strings.TrimPrefix(content, "\ufeff")
+	if !strings.HasPrefix(content, "---") {
+		return "", false
+	}
+	lines := strings.Split(content, "\n")
+	if strings.TrimSpace(lines[0]) != "---" {
+		return "", false
+	}
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			return strings.Join(lines[1:i], "\n"), true
+		}
+	}
+	return "", false
+}
+
+func getManifestString(raw map[string]any, keys ...string) string {
+	value, ok := getManifestValue(raw, keys...)
+	if !ok || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
+func getManifestBool(raw map[string]any, keys ...string) *bool {
+	value, ok := getManifestValue(raw, keys...)
+	if !ok {
+		return nil
+	}
+	var result bool
+	switch typed := value.(type) {
+	case bool:
+		result = typed
+	case string:
+		result = strings.EqualFold(typed, "true") || strings.EqualFold(typed, "yes")
+	default:
+		return nil
+	}
+	return &result
+}
+
+func getManifestStringMap(raw map[string]any, keys ...string) map[string]string {
+	value, ok := getManifestValue(raw, keys...)
+	if !ok || value == nil {
+		return nil
+	}
+	result := map[string]string{}
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, value := range typed {
+			result[key] = fmt.Sprint(value)
+		}
+	case map[any]any:
+		for key, value := range typed {
+			result[fmt.Sprint(key)] = fmt.Sprint(value)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func getManifestArguments(raw map[string]any, keys ...string) any {
+	value, ok := getManifestValue(raw, keys...)
+	if !ok || value == nil {
+		return nil
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case []any:
+		result := make([]string, 0, len(typed))
+		for _, value := range typed {
+			result = append(result, fmt.Sprint(value))
+		}
+		return result
+	case []string:
+		return typed
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
+func getManifestValue(raw map[string]any, keys ...string) (any, bool) {
+	for _, key := range keys {
+		if value, ok := raw[key]; ok {
+			return value, true
+		}
+	}
+	return nil, false
 }

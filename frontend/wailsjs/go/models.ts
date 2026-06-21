@@ -126,6 +126,38 @@ export namespace skillmgr {
 	        this.errors = source["errors"];
 	    }
 	}
+	export class SkillManifest {
+	    name?: string;
+	    description?: string;
+	    license?: string;
+	    compatibility?: string;
+	    metadata?: Record<string, string>;
+	    allowedTools?: string;
+	    whenToUse?: string;
+	    disableModelInvocation?: boolean;
+	    userInvocable?: boolean;
+	    argumentHint?: string;
+	    arguments?: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new SkillManifest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.license = source["license"];
+	        this.compatibility = source["compatibility"];
+	        this.metadata = source["metadata"];
+	        this.allowedTools = source["allowedTools"];
+	        this.whenToUse = source["whenToUse"];
+	        this.disableModelInvocation = source["disableModelInvocation"];
+	        this.userInvocable = source["userInvocable"];
+	        this.argumentHint = source["argumentHint"];
+	        this.arguments = source["arguments"];
+	    }
+	}
 	export class Skill {
 	    id: string;
 	    name: string;
@@ -141,6 +173,7 @@ export namespace skillmgr {
 	    validationErrors?: string[];
 	    files?: string[];
 	    description?: string;
+	    manifest?: SkillManifest;
 	    previewFile?: string;
 	    preview?: string;
 	    updatedAt?: string;
@@ -168,6 +201,7 @@ export namespace skillmgr {
 	        this.validationErrors = source["validationErrors"];
 	        this.files = source["files"];
 	        this.description = source["description"];
+	        this.manifest = this.convertValues(source["manifest"], SkillManifest);
 	        this.previewFile = source["previewFile"];
 	        this.preview = source["preview"];
 	        this.updatedAt = source["updatedAt"];
@@ -256,6 +290,7 @@ export namespace skillmgr {
 		    return a;
 		}
 	}
+	
 	
 	
 	

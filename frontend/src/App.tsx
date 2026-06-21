@@ -359,7 +359,9 @@ function App() {
                     </td>
                     <td className="px-3 py-2">
                       <div className="font-medium">{skill.name}</div>
-                      <div className="max-w-[260px] truncate text-xs text-muted-foreground">{skill.sourcePath}</div>
+                      <div className="max-w-[360px] truncate text-xs text-muted-foreground">
+                        {skill.description || "No description"}
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">{skill.sourceAlias || skill.sourceId}</td>
                     <td className="px-3 py-2">
@@ -566,6 +568,8 @@ function SkillDetail({
         )}
       </DetailSection>
 
+      <ManifestSection manifest={skill.manifest} />
+
       {(skill.validationErrors?.length || skill.error) && (
         <DetailSection title="Issues">
           {skill.error && <IssueLine value={skill.error} />}
@@ -634,6 +638,70 @@ function SkillDetail({
       </div>
     </div>
   );
+}
+
+function ManifestSection({ manifest }: { manifest?: skillmgr.SkillManifest }) {
+  if (!manifest) {
+    return null;
+  }
+  const metadataEntries = Object.entries(manifest.metadata ?? {});
+  return (
+    <DetailSection title="Manifest">
+      <div className="space-y-2 rounded-md border border-border bg-slate-50 p-3">
+        <ManifestRow label="name" value={manifest.name} />
+        <ManifestRow label="description" value={manifest.description} />
+        <ManifestRow label="license" value={manifest.license} />
+        <ManifestRow label="compatibility" value={manifest.compatibility} />
+        <ManifestRow label="allowedTools" value={manifest.allowedTools} />
+        <ManifestRow label="whenToUse" value={manifest.whenToUse} />
+        <ManifestRow
+          label="disableModelInvocation"
+          value={manifest.disableModelInvocation === undefined ? undefined : String(manifest.disableModelInvocation)}
+        />
+        <ManifestRow
+          label="userInvocable"
+          value={manifest.userInvocable === undefined ? undefined : String(manifest.userInvocable)}
+        />
+        <ManifestRow label="argumentHint" value={manifest.argumentHint} />
+        <ManifestRow label="arguments" value={formatManifestArguments(manifest.arguments)} />
+        {metadataEntries.length > 0 && (
+          <div className="border-t border-border pt-2">
+            <div className="mb-1 text-xs font-medium text-muted-foreground">metadata</div>
+            <div className="space-y-1">
+              {metadataEntries.map(([key, value]) => (
+                <div key={key} className="grid grid-cols-[120px_minmax(0,1fr)] gap-2 text-xs">
+                  <span className="truncate font-mono text-slate-500">{key}</span>
+                  <span className="break-words text-slate-700">{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </DetailSection>
+  );
+}
+
+function ManifestRow({ label, value }: { label: string; value?: string }) {
+  if (!value) {
+    return null;
+  }
+  return (
+    <div className="grid grid-cols-[150px_minmax(0,1fr)] gap-2 text-xs">
+      <span className="truncate font-mono text-slate-500">{label}</span>
+      <span className="break-words text-slate-700">{value}</span>
+    </div>
+  );
+}
+
+function formatManifestArguments(value: unknown) {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    return value.join(", ");
+  }
+  return String(value);
 }
 
 function EnvEditor({

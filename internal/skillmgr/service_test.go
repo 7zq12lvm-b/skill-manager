@@ -231,6 +231,71 @@ func TestDuplicateSkillActiveSourceIsStillMarkedActive(t *testing.T) {
 	}
 }
 
+func TestScanParsesSkillManifestFrontmatter(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	skillPath := filepath.Join(source, "manifest-skill")
+	mustWrite(t, filepath.Join(skillPath, "SKILL.md"), `---
+name: Manifest Skill
+description: Helps users manage local skills.
+license: MIT
+compatibility: Claude Code
+metadata:
+  owner: tools
+  tier: core
+allowed-tools: Read, Write
+when-to-use: Use when editing local skill manifests.
+disable-model-invocation: true
+user-invocable: true
+argument-hint: "[path]"
+arguments:
+  - path
+  - mode
+---
+
+# Manifest Skill
+`)
+
+	inventory, err := NewService().Scan(context.Background(), Config{
+		TargetDir: filepath.Join(root, "target"),
+		Sources: []SkillSourceConfig{{
+			ID:      "local",
+			Path:    source,
+			Enabled: true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory.Skills) != 1 {
+		t.Fatalf("expected one skill, got %d", len(inventory.Skills))
+	}
+	manifest := inventory.Skills[0].Manifest
+	if manifest == nil {
+		t.Fatal("expected manifest to be parsed")
+	}
+	if manifest.Name != "Manifest Skill" {
+		t.Fatalf("unexpected manifest name: %q", manifest.Name)
+	}
+	if inventory.Skills[0].Description != "Helps users manage local skills." {
+		t.Fatalf("expected description from manifest, got %q", inventory.Skills[0].Description)
+	}
+	if manifest.Metadata["owner"] != "tools" || manifest.Metadata["tier"] != "core" {
+		t.Fatalf("unexpected metadata: %#v", manifest.Metadata)
+	}
+	if manifest.AllowedTools != "Read, Write" || manifest.WhenToUse == "" {
+		t.Fatalf("expected Claude-compatible fields, got %#v", manifest)
+	}
+	if manifest.DisableModelInvocation == nil || !*manifest.DisableModelInvocation ||
+		manifest.UserInvocable == nil || !*manifest.UserInvocable {
+		t.Fatalf("expected boolean manifest fields to parse, got %#v", manifest)
+	}
+	args, ok := manifest.Arguments.([]string)
+	if !ok || len(args) != 2 || args[0] != "path" || args[1] != "mode" {
+		t.Fatalf("unexpected arguments: %#v", manifest.Arguments)
+	}
+}
+
 func TestReadEnvFileReturnsEmptyWhenMissing(t *testing.T) {
 	root := t.TempDir()
 	skillPath := filepath.Join(root, "source", "env-skill")
