@@ -458,9 +458,9 @@ function SkillDetail({
       </div>
 
       <DetailSection title="Paths">
-        <PathRow label="Source" path={skill.sourcePath} onOpen={onOpen} />
-        <PathRow label="Symlink" path={skill.symlinkPath} onOpen={onOpen} />
-        {skill.symlinkTarget && <ReadOnlyRow label="Target" value={skill.symlinkTarget} />}
+        <PathRow label="Source folder" path={skill.sourcePath} onOpen={onOpen} />
+        <PathRow label="Link path" path={skill.symlinkPath} onOpen={onOpen} />
+        {skill.symlinkTarget && !skill.isActive && <ReadOnlyRow label="Currently points to" value={skill.symlinkTarget} />}
       </DetailSection>
 
       {(skill.validationErrors?.length || skill.error) && (
