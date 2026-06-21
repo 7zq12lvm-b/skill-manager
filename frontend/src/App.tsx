@@ -41,6 +41,15 @@ const statusClass: Record<string, string> = {
   syncing: "border-blue-200 bg-blue-50 text-blue-700",
 };
 
+const SOURCE_WIDTH_KEY = "skill-manager:source-panel-width";
+const DETAIL_WIDTH_KEY = "skill-manager:detail-panel-width";
+const DEFAULT_SOURCE_WIDTH = 260;
+const DEFAULT_DETAIL_WIDTH = 340;
+const MIN_SOURCE_WIDTH = 180;
+const MAX_SOURCE_WIDTH = 420;
+const MIN_DETAIL_WIDTH = 260;
+const MAX_DETAIL_WIDTH = 560;
+
 function App() {
   const {
     inventory,
@@ -71,6 +80,12 @@ function App() {
   const [addSourceOpen, setAddSourceOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sourcePath, setSourcePath] = useState("");
+  const [sourcePanelWidth, setSourcePanelWidth] = useState(() =>
+    readStoredWidth(SOURCE_WIDTH_KEY, DEFAULT_SOURCE_WIDTH, MIN_SOURCE_WIDTH, MAX_SOURCE_WIDTH),
+  );
+  const [detailPanelWidth, setDetailPanelWidth] = useState(() =>
+    readStoredWidth(DETAIL_WIDTH_KEY, DEFAULT_DETAIL_WIDTH, MIN_DETAIL_WIDTH, MAX_DETAIL_WIDTH),
+  );
 
   useEffect(() => {
     load();
@@ -79,6 +94,14 @@ function App() {
     });
     return unsubscribe;
   }, [load, setInventory]);
+
+  useEffect(() => {
+    localStorage.setItem(SOURCE_WIDTH_KEY, String(sourcePanelWidth));
+  }, [sourcePanelWidth]);
+
+  useEffect(() => {
+    localStorage.setItem(DETAIL_WIDTH_KEY, String(detailPanelWidth));
+  }, [detailPanelWidth]);
 
   const filteredSkills = useMemo(() => {
     const skills = inventory?.skills ?? [];
@@ -125,6 +148,36 @@ function App() {
     if (alias !== null) await renameSource(source.id, alias);
   }
 
+  function startColumnResize(kind: "source" | "detail", event: React.PointerEvent) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startSourceWidth = sourcePanelWidth;
+    const startDetailWidth = detailPanelWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const delta = moveEvent.clientX - startX;
+      if (kind === "source") {
+        setSourcePanelWidth(clamp(startSourceWidth + delta, MIN_SOURCE_WIDTH, MAX_SOURCE_WIDTH));
+      } else {
+        setDetailPanelWidth(clamp(startDetailWidth - delta, MIN_DETAIL_WIDTH, MAX_DETAIL_WIDTH));
+      }
+    };
+
+    const stopResize = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      window.removeEventListener("pointercancel", stopResize);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    window.addEventListener("pointercancel", stopResize);
+  }
+
   return (
     <div className="flex h-screen min-w-0 flex-col overflow-hidden bg-background">
       <header className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-4 py-3 sm:px-5">
@@ -160,8 +213,13 @@ function App() {
         </div>
       )}
 
-      <main className="grid min-h-0 flex-1 grid-cols-[220px_minmax(420px,1fr)_320px] overflow-auto 2xl:grid-cols-[280px_minmax(520px,1fr)_360px]">
-        <aside className="min-h-0 border-r border-border bg-white">
+      <main
+        className="grid min-h-0 flex-1 overflow-auto"
+        style={{
+          gridTemplateColumns: `${sourcePanelWidth}px 8px minmax(420px, 1fr) 8px ${detailPanelWidth}px`,
+        }}
+      >
+        <aside className="min-h-0 bg-white">
           <PanelHeader title="Skill Sources">
             <IconButton title="Add source" onClick={() => setAddSourceOpen(true)}>
               <FolderPlus className="h-4 w-4" />
@@ -217,7 +275,9 @@ function App() {
           </div>
         </aside>
 
-        <section className="min-h-0 border-r border-border bg-slate-50">
+        <ResizeHandle label="Resize Skill Sources" onPointerDown={(event) => startColumnResize("source", event)} />
+
+        <section className="min-h-0 bg-slate-50">
           <PanelHeader title="Skills">
             <Button variant="outline" onClick={rescan} disabled={loading}>
               <RefreshCcw className={cn("h-4 w-4", loading && "animate-spin")} />
@@ -308,6 +368,8 @@ function App() {
           </div>
         </section>
 
+        <ResizeHandle label="Resize Skill Detail" onPointerDown={(event) => startColumnResize("detail", event)} />
+
         <aside className="min-h-0 bg-white">
           <PanelHeader title="Skill Detail" />
           <SkillDetail
@@ -392,6 +454,27 @@ function SummaryItem({ label, value, tone = "slate" }: { label: string; value: n
     <span className={cn("rounded-md px-2 py-1 font-medium", tones[tone])}>
       {value} {label}
     </span>
+  );
+}
+
+function ResizeHandle({
+  label,
+  onPointerDown,
+}: {
+  label: string;
+  onPointerDown: (event: React.PointerEvent) => void;
+}) {
+  return (
+    <div
+      aria-label={label}
+      role="separator"
+      tabIndex={0}
+      title={label}
+      onPointerDown={onPointerDown}
+      className="group flex min-h-0 cursor-col-resize items-stretch justify-center bg-white"
+    >
+      <div className="w-px bg-border transition group-hover:w-1 group-hover:bg-blue-400" />
+    </div>
   );
 }
 
@@ -751,6 +834,16 @@ function formatDate(value?: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function readStoredWidth(key: string, fallback: number, min: number, max: number) {
+  const value = Number(localStorage.getItem(key));
+  if (!Number.isFinite(value)) return fallback;
+  return clamp(value, min, max);
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, Math.round(value)));
 }
 
 export default App;
