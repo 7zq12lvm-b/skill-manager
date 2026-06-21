@@ -126,16 +126,18 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen min-w-[980px] flex-col overflow-hidden bg-background">
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-white px-5">
-        <div className="flex items-center gap-4">
-          <div>
+    <div className="flex h-screen min-w-0 flex-col overflow-hidden bg-background">
+      <header className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-4 py-3 sm:px-5">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <div className="min-w-0">
             <h1 className="text-lg font-semibold tracking-normal">AI Agent Skill Manager</h1>
-            <p className="text-xs text-muted-foreground">Target: {inventory?.config?.targetDir ?? "-"}</p>
+            <p className="max-w-[calc(100vw-2rem)] truncate text-xs text-muted-foreground sm:max-w-[520px]">
+              Target: {inventory?.config?.targetDir ?? "-"}
+            </p>
           </div>
           {inventory && <SummaryBar summary={inventory.summary} />}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <IconButton title="Open target folder" onClick={() => inventory && openPath(inventory.config.targetDir)}>
             <Folder className="h-4 w-4" />
           </IconButton>
@@ -158,8 +160,8 @@ function App() {
         </div>
       )}
 
-      <main className="grid min-h-0 flex-1 grid-cols-[280px_minmax(430px,1fr)_360px]">
-        <aside className="min-h-0 border-r border-border bg-white">
+      <main className="grid min-h-0 flex-1 grid-cols-1 overflow-auto lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_340px] xl:overflow-hidden 2xl:grid-cols-[280px_minmax(0,1fr)_360px]">
+        <aside className="min-h-[220px] border-b border-border bg-white lg:min-h-0 lg:border-b-0 lg:border-r">
           <PanelHeader title="Skill Sources">
             <IconButton title="Add source" onClick={() => setAddSourceOpen(true)}>
               <FolderPlus className="h-4 w-4" />
@@ -215,14 +217,14 @@ function App() {
           </div>
         </aside>
 
-        <section className="min-h-0 border-r border-border bg-slate-50">
+        <section className="min-h-[420px] border-b border-border bg-slate-50 lg:min-h-0 lg:border-b-0 xl:border-r">
           <PanelHeader title="Skills">
             <Button variant="outline" onClick={rescan} disabled={loading}>
               <RefreshCcw className={cn("h-4 w-4", loading && "animate-spin")} />
               Rescan
             </Button>
           </PanelHeader>
-          <div className="flex gap-2 border-b border-border bg-white p-3">
+          <div className="flex flex-wrap gap-2 border-b border-border bg-white p-3">
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <input
@@ -235,7 +237,7 @@ function App() {
             <select
               value={selectedSourceId}
               onChange={(event) => setSelectedSourceId(event.target.value)}
-              className="h-9 rounded-md border border-input bg-white px-2 text-sm"
+              className="h-9 min-w-[150px] flex-1 rounded-md border border-input bg-white px-2 text-sm sm:flex-none"
             >
               <option value="all">All Sources</option>
               {(inventory?.sources ?? []).map((source) => (
@@ -247,7 +249,7 @@ function App() {
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
-              className="h-9 rounded-md border border-input bg-white px-2 text-sm"
+              className="h-9 min-w-[130px] flex-1 rounded-md border border-input bg-white px-2 text-sm sm:flex-none"
             >
               <option value="all">All Status</option>
               {Object.entries(statusLabels).map(([value, label]) => (
@@ -258,7 +260,7 @@ function App() {
             </select>
           </div>
           <div className="min-h-0 overflow-auto">
-            <table className="w-full border-collapse text-sm">
+            <table className="min-w-[640px] w-full border-collapse text-sm">
               <thead className="sticky top-0 bg-slate-100 text-left text-xs font-medium text-muted-foreground">
                 <tr className="border-b border-border">
                   <th className="w-16 px-3 py-2">On</th>
@@ -306,7 +308,7 @@ function App() {
           </div>
         </section>
 
-        <aside className="min-h-0 bg-white">
+        <aside className="min-h-[420px] bg-white lg:col-span-2 xl:col-span-1 xl:min-h-0">
           <PanelHeader title="Skill Detail" />
           <SkillDetail
             skill={selectedSkill}
@@ -370,7 +372,7 @@ function App() {
 
 function SummaryBar({ summary }: { summary: skillmgr.Summary }) {
   return (
-    <div className="flex items-center gap-2 text-xs">
+    <div className="flex flex-wrap items-center gap-2 text-xs">
       <SummaryItem label="Found" value={summary.skillsFound} />
       <SummaryItem label="Enabled" value={summary.enabled} tone="emerald" />
       <SummaryItem label="Conflicts" value={summary.conflicts} tone="amber" />
@@ -460,7 +462,9 @@ function SkillDetail({
       <DetailSection title="Paths">
         <PathRow label="Source folder" path={skill.sourcePath} onOpen={onOpen} />
         <PathRow label="Link path" path={skill.symlinkPath} onOpen={onOpen} />
-        {skill.symlinkTarget && !skill.isActive && <ReadOnlyRow label="Currently points to" value={skill.symlinkTarget} />}
+        {skill.symlinkTarget && !skill.isActive && (
+          <ReadOnlyRow label="Currently points to" value={skill.symlinkTarget} />
+        )}
       </DetailSection>
 
       {(skill.validationErrors?.length || skill.error) && (
@@ -510,7 +514,7 @@ function SkillDetail({
         </DetailSection>
       )}
 
-      <div className="sticky bottom-0 mt-5 flex gap-2 border-t border-border bg-white pt-4">
+      <div className="sticky bottom-0 mt-5 flex flex-wrap gap-2 border-t border-border bg-white pt-4">
         <Button variant="outline" onClick={() => onOpen(skill.sourcePath)}>
           <Folder className="h-4 w-4" />
           Open
@@ -559,7 +563,7 @@ function SettingsModal({
             className="mt-2 h-9 w-full rounded-md border border-input px-3 text-sm"
           />
         </label>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="flex items-center gap-2 rounded-md border border-border p-3 text-sm">
             <input
               type="checkbox"
