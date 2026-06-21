@@ -170,13 +170,13 @@ function App() {
           <div className="min-w-0">
             <h1 className="text-lg font-semibold tracking-normal">AI Agent Skill Manager</h1>
             <p className="max-w-[calc(100vw-2rem)] truncate text-xs text-muted-foreground sm:max-w-[520px]">
-              Target: {inventory?.config?.targetDir ?? "-"}
+              Targets: {targetDirsLabel(inventory?.config?.targetDirs)}
             </p>
           </div>
           {inventory && <SummaryBar summary={inventory.summary} />}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <IconButton title="Open target folder" onClick={() => inventory && openPath(inventory.config.targetDir)}>
+          <IconButton title="Open primary target folder" onClick={() => inventory && openPath(primaryTargetDir(inventory.config))}>
             <Folder className="h-4 w-4" />
           </IconButton>
           <Button variant="outline" onClick={rescan} disabled={loading}>
@@ -529,7 +529,7 @@ function SkillSwitch({
 }
 
 function isActiveSkill(skill: skillmgr.Skill) {
-  return skill.isActive || skill.status === "synced";
+  return skill.isActive || skill.status === "synced" || skill.status === "syncing";
 }
 
 function SkillDetail({
@@ -558,10 +558,15 @@ function SkillDetail({
 
       <DetailSection title="Paths">
         <PathRow label="Source folder" path={skill.sourcePath} />
-        <PathRow label="Link path" path={skill.symlinkPath} />
-        {skill.symlinkTarget && !skill.isActive && (
-          <ReadOnlyRow label="Currently points to" value={skill.symlinkTarget} />
-        )}
+        {(skill.targetStates?.length ? skill.targetStates : []).map((target) => (
+          <div key={target.targetPath} className="space-y-2 border-l border-border pl-3">
+            <PathRow label="Link path" path={target.symlinkPath} />
+            <ReadOnlyRow label="Target folder" value={target.targetDir} />
+            {target.symlinkTarget && <ReadOnlyRow label="Currently points to" value={target.symlinkTarget} />}
+            {target.error && <IssueLine value={target.error} />}
+          </div>
+        ))}
+        {!skill.targetStates?.length && <PathRow label="Link path" path={skill.symlinkPath ?? ""} />}
       </DetailSection>
 
       <ManifestSection manifest={skill.manifest} />
@@ -770,24 +775,66 @@ function SettingsModal({
   onSave: (config: skillmgr.Config) => Promise<void>;
 }) {
   const [config, setConfig] = useState(() => skillmgr.Config.createFrom(inventory.config));
+  const [newTargetDir, setNewTargetDir] = useState("");
   const updateConfig = (next: Partial<skillmgr.Config>) => {
     setConfig(skillmgr.Config.createFrom({ ...config, ...next }));
   };
   const updateScan = (next: Partial<skillmgr.ScanConfig>) => {
     updateConfig({ scan: skillmgr.ScanConfig.createFrom({ ...config.scan, ...next }) });
   };
+  const targetDirs = config.targetDirs?.length ? config.targetDirs : ["~/.agents/skills"];
+  const updateTargetDir = (index: number, value: string) => {
+    updateConfig({ targetDirs: targetDirs.map((targetDir, itemIndex) => (itemIndex === index ? value : targetDir)) });
+  };
+  const removeTargetDir = (index: number) => {
+    updateConfig({ targetDirs: targetDirs.filter((_, itemIndex) => itemIndex !== index) });
+  };
+  const addTargetDir = () => {
+    const trimmed = newTargetDir.trim();
+    if (!trimmed) {
+      return;
+    }
+    updateConfig({ targetDirs: [...targetDirs, trimmed] });
+    setNewTargetDir("");
+  };
 
   return (
     <Modal title="Settings" onClose={onClose}>
       <div className="space-y-4">
-        <label className="block text-sm font-medium">
-          Target skill directory
-          <input
-            value={config.targetDir}
-            onChange={(event) => updateConfig({ targetDir: event.target.value })}
-            className="mt-2 h-9 w-full rounded-md border border-input px-3 text-sm"
-          />
-        </label>
+        <div className="block text-sm font-medium">
+          Target skill directories
+          <div className="mt-2 space-y-2">
+            {targetDirs.map((targetDir, index) => (
+              <div key={`${targetDir}-${index}`} className="flex gap-2">
+                <input
+                  value={targetDir}
+                  onChange={(event) => updateTargetDir(index, event.target.value)}
+                  className="h-9 min-w-0 flex-1 rounded-md border border-input px-3 text-sm"
+                />
+                <IconButton title="Remove target directory" onClick={() => removeTargetDir(index)}>
+                  <X className="h-4 w-4" />
+                </IconButton>
+              </div>
+            ))}
+            <div className="flex gap-2">
+              <input
+                value={newTargetDir}
+                onChange={(event) => setNewTargetDir(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    addTargetDir();
+                  }
+                }}
+                className="h-9 min-w-0 flex-1 rounded-md border border-input px-3 text-sm"
+                placeholder="/Users/yusuf/.agents/skills"
+              />
+              <Button variant="outline" onClick={addTargetDir}>
+                Add
+              </Button>
+            </div>
+          </div>
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="flex items-center gap-2 rounded-md border border-border p-3 text-sm">
             <input
@@ -1052,6 +1099,20 @@ function action(event: React.MouseEvent, callback: () => void) {
 
 function basename(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() || path;
+}
+
+function primaryTargetDir(config: skillmgr.Config) {
+  return config.targetDirs?.[0] ?? "~/.agents/skills";
+}
+
+function targetDirsLabel(targetDirs?: string[]) {
+  if (!targetDirs?.length) {
+    return "-";
+  }
+  if (targetDirs.length === 1) {
+    return targetDirs[0];
+  }
+  return `${targetDirs.length} targets`;
 }
 
 function formatDate(value?: string) {

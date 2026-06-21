@@ -51,10 +51,10 @@ func (s *ConfigStore) Save(config Config) error {
 }
 
 func normalizeConfig(config Config) Config {
-	if config.TargetDir == "" {
-		config.TargetDir = DefaultConfig().TargetDir
+	if len(config.TargetDirs) == 0 {
+		config.TargetDirs = append([]string(nil), DefaultConfig().TargetDirs...)
 	}
-	config.TargetDir = expandHome(config.TargetDir)
+	config.TargetDirs = cleanTargetDirs(config.TargetDirs)
 	config.Validation.Mode = ValidationStrict
 	config.Validation.RequiredFiles = []string{"SKILL.md"}
 	config.Validation.ShowInvalid = false
@@ -68,4 +68,22 @@ func normalizeConfig(config Config) Config {
 		}
 	}
 	return config
+}
+
+func cleanTargetDirs(targetDirs []string) []string {
+	defaultTargetDirs := DefaultConfig().TargetDirs
+	seen := map[string]bool{}
+	cleaned := make([]string, 0, len(targetDirs))
+	for _, targetDir := range targetDirs {
+		targetDir = filepath.Clean(expandHome(targetDir))
+		if targetDir == "." || targetDir == "" || seen[targetDir] {
+			continue
+		}
+		seen[targetDir] = true
+		cleaned = append(cleaned, targetDir)
+	}
+	if len(cleaned) == 0 {
+		return append([]string(nil), defaultTargetDirs...)
+	}
+	return cleaned
 }

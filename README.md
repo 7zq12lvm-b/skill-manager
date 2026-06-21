@@ -2,7 +2,7 @@
 
 A Wails v2 desktop app for managing local AI Agent skills across multiple source directories.
 
-The app scans configured skill sources, shows discovered first-level skill folders, derives their sync status against a target directory, and only mutates `~/.agents/skills` through explicit enable, disable, or conflict-resolution actions.
+The app scans configured skill sources, shows discovered first-level skill folders, derives their sync status against one or more target directories, and only mutates configured target directories through explicit enable, disable, or conflict-resolution actions.
 
 ## Stack
 

@@ -19,7 +19,7 @@ func TestScanDiscoversFirstLevelSkillsAndDerivesStatuses(t *testing.T) {
 	mustSymlink(t, filepath.Join(source, "summarize-pdf"), filepath.Join(target, "summarize-pdf"))
 
 	config := Config{
-		TargetDir: target,
+		TargetDirs: []string{target},
 		Sources: []SkillSourceConfig{{
 			ID:      "local",
 			Path:    source,
@@ -50,7 +50,7 @@ func TestScanIsReadOnly(t *testing.T) {
 	mustMkdir(t, target)
 
 	config := Config{
-		TargetDir: target,
+		TargetDirs: []string{target},
 		Sources: []SkillSourceConfig{{
 			ID:      "local",
 			Path:    source,
@@ -76,7 +76,7 @@ func TestEnableCreatesSymlinkWhenTargetIsEmpty(t *testing.T) {
 	mustMkdir(t, skillPath)
 
 	service := NewService()
-	config := Config{TargetDir: target, Validation: ValidationConfig{Mode: ValidationLoose}}
+	config := Config{TargetDirs: []string{target}, Validation: ValidationConfig{Mode: ValidationLoose}}
 	err := service.Enable(context.Background(), config, Skill{Name: "code-review", SourcePath: skillPath})
 	if err != nil {
 		t.Fatal(err)
@@ -91,6 +91,104 @@ func TestEnableCreatesSymlinkWhenTargetIsEmpty(t *testing.T) {
 	}
 }
 
+func TestEnableAndDisableApplyToAllTargetDirs(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	targetA := filepath.Join(root, "target-a")
+	targetB := filepath.Join(root, "target-b")
+	skillPath := filepath.Join(source, "code-review")
+	mustMkdir(t, skillPath)
+
+	service := NewService()
+	config := Config{
+		TargetDirs: []string{targetA, targetB},
+		Validation: ValidationConfig{Mode: ValidationLoose},
+	}
+	err := service.Enable(context.Background(), config, Skill{Name: "code-review", SourcePath: skillPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, target := range []string{targetA, targetB} {
+		actual, err := os.Readlink(filepath.Join(target, "code-review"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if actual != skillPath {
+			t.Fatalf("expected symlink in %s to %s, got %s", target, skillPath, actual)
+		}
+	}
+
+	err = service.Disable(context.Background(), config, Skill{Name: "code-review", SourcePath: skillPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{targetA, targetB} {
+		if _, err := os.Lstat(filepath.Join(target, "code-review")); !os.IsNotExist(err) {
+			t.Fatalf("expected symlink in %s to be removed, lstat err = %v", target, err)
+		}
+	}
+}
+
+func TestScanMarksPartiallySyncedSkillAsSyncing(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	targetA := filepath.Join(root, "target-a")
+	targetB := filepath.Join(root, "target-b")
+	skillPath := filepath.Join(source, "code-review")
+	mustWrite(t, filepath.Join(skillPath, "SKILL.md"), "# code-review\n")
+	mustMkdir(t, targetA)
+	mustSymlink(t, skillPath, filepath.Join(targetA, "code-review"))
+
+	inventory, err := NewService().Scan(context.Background(), Config{
+		TargetDirs: []string{targetA, targetB},
+		Sources: []SkillSourceConfig{{
+			ID:      "local",
+			Path:    source,
+			Enabled: true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertSkillStatus(t, inventory, "code-review", StatusSyncing)
+	if len(inventory.Skills) != 1 || len(inventory.Skills[0].TargetStates) != 2 {
+		t.Fatalf("expected two target states, got %#v", inventory.Skills)
+	}
+}
+
+func TestDisableRemovesMatchingTargetsEvenWhenAnotherTargetConflicts(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	other := filepath.Join(root, "other")
+	targetA := filepath.Join(root, "target-a")
+	targetB := filepath.Join(root, "target-b")
+	skillPath := filepath.Join(source, "code-review")
+	otherSkillPath := filepath.Join(other, "code-review")
+	mustMkdir(t, skillPath)
+	mustMkdir(t, otherSkillPath)
+	mustMkdir(t, targetA)
+	mustMkdir(t, targetB)
+	mustSymlink(t, skillPath, filepath.Join(targetA, "code-review"))
+	mustSymlink(t, otherSkillPath, filepath.Join(targetB, "code-review"))
+
+	err := NewService().Disable(context.Background(), Config{TargetDirs: []string{targetA, targetB}}, Skill{Name: "code-review", SourcePath: skillPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(targetA, "code-review")); !os.IsNotExist(err) {
+		t.Fatalf("expected matching symlink to be removed, lstat err = %v", err)
+	}
+	actual, err := os.Readlink(filepath.Join(targetB, "code-review"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual != otherSkillPath {
+		t.Fatalf("expected conflicting symlink to remain pointed at %s, got %s", otherSkillPath, actual)
+	}
+}
+
 func TestEnableRefusesOccupiedTarget(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "source")
@@ -102,7 +200,7 @@ func TestEnableRefusesOccupiedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := NewService().Enable(context.Background(), Config{TargetDir: target}, Skill{Name: "code-review", SourcePath: skillPath})
+	err := NewService().Enable(context.Background(), Config{TargetDirs: []string{target}}, Skill{Name: "code-review", SourcePath: skillPath})
 	if err == nil {
 		t.Fatal("expected enable to refuse an occupied non-symlink target")
 	}
@@ -120,7 +218,7 @@ func TestDisableRemovesOnlyMatchingSymlink(t *testing.T) {
 	mustMkdir(t, target)
 	mustSymlink(t, otherSkillPath, filepath.Join(target, "code-review"))
 
-	err := NewService().Disable(context.Background(), Config{TargetDir: target}, Skill{Name: "code-review", SourcePath: skillPath})
+	err := NewService().Disable(context.Background(), Config{TargetDirs: []string{target}}, Skill{Name: "code-review", SourcePath: skillPath})
 	if err == nil {
 		t.Fatal("expected disable to refuse removing a symlink pointing elsewhere")
 	}
@@ -132,7 +230,7 @@ func TestDisableRemovesOnlyMatchingSymlink(t *testing.T) {
 		t.Fatalf("expected symlink to remain pointed at %s, got %s", otherSkillPath, actual)
 	}
 
-	err = NewService().Disable(context.Background(), Config{TargetDir: target}, Skill{Name: "code-review", SourcePath: otherSkillPath})
+	err = NewService().Disable(context.Background(), Config{TargetDirs: []string{target}}, Skill{Name: "code-review", SourcePath: otherSkillPath})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +246,7 @@ func TestStrictValidationMarksMissingSkillFileInvalid(t *testing.T) {
 	mustMkdir(t, filepath.Join(source, "broken-skill"))
 
 	inventory, err := NewService().Scan(context.Background(), Config{
-		TargetDir: target,
+		TargetDirs: []string{target},
 		Sources: []SkillSourceConfig{{
 			ID:      "local",
 			Path:    source,
@@ -176,7 +274,7 @@ func TestDuplicateSkillNamesAreConflicts(t *testing.T) {
 	mustWrite(t, filepath.Join(sourceB, "code-review", "SKILL.md"), "# code-review\n")
 
 	inventory, err := NewService().Scan(context.Background(), Config{
-		TargetDir: target,
+		TargetDirs: []string{target},
 		Sources: []SkillSourceConfig{
 			{ID: "a", Path: sourceA, Enabled: true},
 			{ID: "b", Path: sourceB, Enabled: true},
@@ -211,7 +309,7 @@ func TestDuplicateSkillActiveSourceIsStillMarkedActive(t *testing.T) {
 	mustSymlink(t, activeSkill, filepath.Join(target, "code-review"))
 
 	inventory, err := NewService().Scan(context.Background(), Config{
-		TargetDir: target,
+		TargetDirs: []string{target},
 		Sources: []SkillSourceConfig{
 			{ID: "a", Path: sourceA, Enabled: true},
 			{ID: "b", Path: sourceB, Enabled: true},
@@ -257,7 +355,7 @@ arguments:
 `)
 
 	inventory, err := NewService().Scan(context.Background(), Config{
-		TargetDir: filepath.Join(root, "target"),
+		TargetDirs: []string{filepath.Join(root, "target")},
 		Sources: []SkillSourceConfig{{
 			ID:      "local",
 			Path:    source,
@@ -349,7 +447,7 @@ func TestScanSkipsDotGitAndFoldersWithoutSkillFile(t *testing.T) {
 	mustWrite(t, filepath.Join(source, "real-skill", "SKILL.md"), "# real skill\n")
 
 	inventory, err := NewService().Scan(context.Background(), Config{
-		TargetDir: filepath.Join(root, "target"),
+		TargetDirs: []string{filepath.Join(root, "target")},
 		Sources: []SkillSourceConfig{{
 			ID:      "local",
 			Path:    source,

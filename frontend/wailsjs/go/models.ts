@@ -49,7 +49,7 @@ export namespace skillmgr {
 	    }
 	}
 	export class Config {
-	    targetDir: string;
+	    targetDirs: string[];
 	    sources: SkillSourceConfig[];
 	    validation: ValidationConfig;
 	    scan: ScanConfig;
@@ -62,7 +62,7 @@ export namespace skillmgr {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.targetDir = source["targetDir"];
+	        this.targetDirs = source["targetDirs"];
 	        this.sources = this.convertValues(source["sources"], SkillSourceConfig);
 	        this.validation = this.convertValues(source["validation"], ValidationConfig);
 	        this.scan = this.convertValues(source["scan"], ScanConfig);
@@ -158,14 +158,39 @@ export namespace skillmgr {
 	        this.arguments = source["arguments"];
 	    }
 	}
+	export class SkillTarget {
+	    targetDir: string;
+	    targetPath: string;
+	    symlinkPath: string;
+	    hasSymlink: boolean;
+	    symlinkTarget?: string;
+	    isActive: boolean;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SkillTarget(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.targetDir = source["targetDir"];
+	        this.targetPath = source["targetPath"];
+	        this.symlinkPath = source["symlinkPath"];
+	        this.hasSymlink = source["hasSymlink"];
+	        this.symlinkTarget = source["symlinkTarget"];
+	        this.isActive = source["isActive"];
+	        this.error = source["error"];
+	    }
+	}
 	export class Skill {
 	    id: string;
 	    name: string;
 	    sourceId: string;
 	    sourceAlias?: string;
 	    sourcePath: string;
-	    targetPath: string;
-	    symlinkPath: string;
+	    targetPath?: string;
+	    symlinkPath?: string;
+	    targetStates?: SkillTarget[];
 	    status: string;
 	    hasSymlink: boolean;
 	    symlinkTarget?: string;
@@ -194,6 +219,7 @@ export namespace skillmgr {
 	        this.sourcePath = source["sourcePath"];
 	        this.targetPath = source["targetPath"];
 	        this.symlinkPath = source["symlinkPath"];
+	        this.targetStates = this.convertValues(source["targetStates"], SkillTarget);
 	        this.status = source["status"];
 	        this.hasSymlink = source["hasSymlink"];
 	        this.symlinkTarget = source["symlinkTarget"];
@@ -290,6 +316,7 @@ export namespace skillmgr {
 		    return a;
 		}
 	}
+	
 	
 	
 	

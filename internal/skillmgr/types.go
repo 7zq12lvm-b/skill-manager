@@ -21,7 +21,7 @@ const (
 )
 
 type Config struct {
-	TargetDir        string              `json:"targetDir"`
+	TargetDirs       []string            `json:"targetDirs"`
 	Sources          []SkillSourceConfig `json:"sources"`
 	Validation       ValidationConfig    `json:"validation"`
 	Scan             ScanConfig          `json:"scan"`
@@ -71,8 +71,9 @@ type Skill struct {
 	SourceID         string           `json:"sourceId"`
 	SourceAlias      string           `json:"sourceAlias,omitempty"`
 	SourcePath       string           `json:"sourcePath"`
-	TargetPath       string           `json:"targetPath"`
-	SymlinkPath      string           `json:"symlinkPath"`
+	TargetPath       string           `json:"targetPath,omitempty"`
+	SymlinkPath      string           `json:"symlinkPath,omitempty"`
+	TargetStates     []SkillTarget    `json:"targetStates,omitempty"`
 	Status           SkillStatus      `json:"status"`
 	HasSymlink       bool             `json:"hasSymlink"`
 	SymlinkTarget    string           `json:"symlinkTarget,omitempty"`
@@ -87,6 +88,16 @@ type Skill struct {
 	LastScannedAt    string           `json:"lastScannedAt,omitempty"`
 	ConflictSources  []ConflictSource `json:"conflictSources,omitempty"`
 	Error            string           `json:"error,omitempty"`
+}
+
+type SkillTarget struct {
+	TargetDir     string `json:"targetDir"`
+	TargetPath    string `json:"targetPath"`
+	SymlinkPath   string `json:"symlinkPath"`
+	HasSymlink    bool   `json:"hasSymlink"`
+	SymlinkTarget string `json:"symlinkTarget,omitempty"`
+	IsActive      bool   `json:"isActive"`
+	Error         string `json:"error,omitempty"`
 }
 
 type SkillManifest struct {
@@ -120,7 +131,7 @@ type Summary struct {
 
 func DefaultConfig() Config {
 	return Config{
-		TargetDir: expandHome("~/.agents/skills"),
+		TargetDirs: []string{expandHome("~/.agents/skills")},
 		Validation: ValidationConfig{
 			Mode:          ValidationStrict,
 			RequiredFiles: []string{"SKILL.md"},

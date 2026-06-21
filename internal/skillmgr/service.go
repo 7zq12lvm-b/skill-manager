@@ -63,8 +63,8 @@ func (s *Service) Scan(_ context.Context, config Config) (Inventory, error) {
 				SourceID:      sourceConfig.ID,
 				SourceAlias:   displaySourceName(sourceConfig),
 				SourcePath:    sourcePath,
-				TargetPath:    filepath.Join(config.TargetDir, name),
-				SymlinkPath:   filepath.Join(config.TargetDir, name),
+				TargetPath:    filepath.Join(config.TargetDirs[0], name),
+				SymlinkPath:   filepath.Join(config.TargetDirs[0], name),
 				Status:        StatusDisabled,
 				LastScannedAt: scannedAt,
 			}
@@ -79,7 +79,7 @@ func (s *Service) Scan(_ context.Context, config Config) (Inventory, error) {
 		sources = append(sources, source)
 	}
 
-	deriveStatuses(skills, config.TargetDir)
+	deriveStatuses(skills, config.TargetDirs)
 	sort.Slice(skills, func(i, j int) bool {
 		if skills[i].Name == skills[j].Name {
 			return skills[i].SourcePath < skills[j].SourcePath
@@ -103,8 +103,59 @@ func (s *Service) Enable(_ context.Context, config Config, skill Skill) error {
 	if len(skill.ValidationErrors) > 0 || skill.Status == StatusInvalid {
 		return fmt.Errorf("cannot enable invalid skill %q", skill.Name)
 	}
-	targetPath := filepath.Join(config.TargetDir, skill.Name)
-	if err := os.MkdirAll(config.TargetDir, 0o755); err != nil {
+	for _, targetDir := range config.TargetDirs {
+		if err := enableInTarget(targetDir, skill); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) Disable(_ context.Context, config Config, skill Skill) error {
+	config = normalizeConfig(config)
+	if skill.Name == "" || skill.SourcePath == "" {
+		return errors.New("skill name and source path are required")
+	}
+	removedAny := false
+	var blockers []string
+	for _, targetDir := range config.TargetDirs {
+		removed, blocker, err := disableInTarget(targetDir, skill)
+		if err != nil {
+			return err
+		}
+		removedAny = removedAny || removed
+		if blocker != "" {
+			blockers = append(blockers, blocker)
+		}
+	}
+	if !removedAny && len(blockers) > 0 {
+		return errors.New(strings.Join(blockers, "; "))
+	}
+	return nil
+}
+
+func (s *Service) ResolveConflict(ctx context.Context, config Config, skill Skill) error {
+	config = normalizeConfig(config)
+	for _, targetDir := range config.TargetDirs {
+		targetPath := filepath.Join(targetDir, skill.Name)
+		info, err := os.Lstat(targetPath)
+		if err == nil {
+			if info.Mode()&os.ModeSymlink == 0 {
+				return fmt.Errorf("target path is occupied and is not a symlink: %s", targetPath)
+			}
+			if err := os.Remove(targetPath); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return s.Enable(ctx, config, skill)
+}
+
+func enableInTarget(targetDir string, skill Skill) error {
+	targetPath := filepath.Join(targetDir, skill.Name)
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return err
 	}
 	info, err := os.Lstat(targetPath)
@@ -127,47 +178,26 @@ func (s *Service) Enable(_ context.Context, config Config, skill Skill) error {
 	return os.Symlink(skill.SourcePath, targetPath)
 }
 
-func (s *Service) Disable(_ context.Context, config Config, skill Skill) error {
-	config = normalizeConfig(config)
-	if skill.Name == "" || skill.SourcePath == "" {
-		return errors.New("skill name and source path are required")
-	}
-	targetPath := filepath.Join(config.TargetDir, skill.Name)
+func disableInTarget(targetDir string, skill Skill) (bool, string, error) {
+	targetPath := filepath.Join(targetDir, skill.Name)
 	info, err := os.Lstat(targetPath)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		return false, "", nil
 	}
 	if err != nil {
-		return err
+		return false, "", err
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
-		return fmt.Errorf("target path is not a symlink: %s", targetPath)
+		return false, fmt.Sprintf("target path is not a symlink: %s", targetPath), nil
 	}
 	currentTarget, err := resolvedSymlinkTarget(targetPath)
 	if err != nil {
-		return err
+		return false, "", err
 	}
 	if !samePath(currentTarget, skill.SourcePath) {
-		return fmt.Errorf("refusing to remove symlink for %q because it points to %s", skill.Name, currentTarget)
+		return false, fmt.Sprintf("refusing to remove symlink for %q because it points to %s", skill.Name, currentTarget), nil
 	}
-	return os.Remove(targetPath)
-}
-
-func (s *Service) ResolveConflict(ctx context.Context, config Config, skill Skill) error {
-	config = normalizeConfig(config)
-	targetPath := filepath.Join(config.TargetDir, skill.Name)
-	info, err := os.Lstat(targetPath)
-	if err == nil {
-		if info.Mode()&os.ModeSymlink == 0 {
-			return fmt.Errorf("target path is occupied and is not a symlink: %s", targetPath)
-		}
-		if err := os.Remove(targetPath); err != nil {
-			return err
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return s.Enable(ctx, config, skill)
+	return true, "", os.Remove(targetPath)
 }
 
 func (s *Service) ReadEnvFile(skill Skill) (string, error) {
@@ -202,35 +232,44 @@ func (s *Service) SaveEnvFile(skill Skill, content string) error {
 	return os.WriteFile(filepath.Join(skill.SourcePath, ".env"), []byte(content), 0o600)
 }
 
-func deriveStatuses(skills []Skill, targetDir string) {
+func deriveStatuses(skills []Skill, targetDirs []string) {
 	byName := map[string][]int{}
 	for i := range skills {
 		byName[skills[i].Name] = append(byName[skills[i].Name], i)
 	}
 
 	for name, indexes := range byName {
-		targetPath := filepath.Join(targetDir, name)
-		info, lstatErr := os.Lstat(targetPath)
-		var hasSymlink bool
-		var symlinkTarget string
-		var targetError string
-
-		switch {
-		case errors.Is(lstatErr, os.ErrNotExist):
-		case lstatErr != nil:
-			targetError = lstatErr.Error()
-		case info.Mode()&os.ModeSymlink == 0:
-			targetError = "target path exists but is not a symlink"
-		default:
-			hasSymlink = true
-			symlinkTarget, targetError = readSymlinkTarget(targetPath)
-		}
-
 		for _, index := range indexes {
 			skill := &skills[index]
+			targetStates := inspectTargets(name, skill.SourcePath, targetDirs)
+			skill.TargetStates = targetStates
+			if len(targetStates) > 0 {
+				primary := targetStates[0]
+				skill.TargetPath = primary.TargetPath
+				skill.SymlinkPath = primary.SymlinkPath
+				skill.SymlinkTarget = primary.SymlinkTarget
+			}
+
+			activeCount := 0
+			hasSymlink := false
+			var targetError string
+			var conflictTarget string
+			for _, targetState := range targetStates {
+				if targetState.HasSymlink {
+					hasSymlink = true
+				}
+				if targetState.IsActive {
+					activeCount++
+				}
+				if targetError == "" && targetState.Error != "" {
+					targetError = fmt.Sprintf("%s: %s", targetState.TargetPath, targetState.Error)
+				}
+				if conflictTarget == "" && targetState.HasSymlink && !targetState.IsActive {
+					conflictTarget = targetState.SymlinkTarget
+				}
+			}
 			skill.HasSymlink = hasSymlink
-			skill.SymlinkTarget = symlinkTarget
-			skill.IsActive = hasSymlink && samePath(symlinkTarget, skill.SourcePath)
+			skill.IsActive = activeCount > 0
 			if targetError != "" {
 				skill.Status = StatusError
 				skill.Error = targetError
@@ -240,10 +279,13 @@ func deriveStatuses(skills []Skill, targetDir string) {
 				skill.Status = StatusConflict
 			} else if !hasSymlink {
 				skill.Status = StatusDisabled
-			} else if skill.IsActive {
+			} else if activeCount == len(targetStates) {
 				skill.Status = StatusSynced
-			} else {
+			} else if conflictTarget != "" {
 				skill.Status = StatusConflict
+				skill.SymlinkTarget = conflictTarget
+			} else {
+				skill.Status = StatusSyncing
 			}
 		}
 
@@ -263,6 +305,34 @@ func deriveStatuses(skills []Skill, targetDir string) {
 			}
 		}
 	}
+}
+
+func inspectTargets(name string, sourcePath string, targetDirs []string) []SkillTarget {
+	targetStates := make([]SkillTarget, 0, len(targetDirs))
+	for _, targetDir := range targetDirs {
+		targetPath := filepath.Join(targetDir, name)
+		targetState := SkillTarget{
+			TargetDir:   targetDir,
+			TargetPath:  targetPath,
+			SymlinkPath: targetPath,
+		}
+		info, lstatErr := os.Lstat(targetPath)
+		switch {
+		case errors.Is(lstatErr, os.ErrNotExist):
+		case lstatErr != nil:
+			targetState.Error = lstatErr.Error()
+		case info.Mode()&os.ModeSymlink == 0:
+			targetState.Error = "target path exists but is not a symlink"
+		default:
+			targetState.HasSymlink = true
+			symlinkTarget, targetError := readSymlinkTarget(targetPath)
+			targetState.SymlinkTarget = symlinkTarget
+			targetState.Error = targetError
+			targetState.IsActive = targetError == "" && samePath(symlinkTarget, sourcePath)
+		}
+		targetStates = append(targetStates, targetState)
+	}
+	return targetStates
 }
 
 func validateSkill(skill *Skill, config ValidationConfig) {
