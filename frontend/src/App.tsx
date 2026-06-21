@@ -160,8 +160,8 @@ function App() {
         </div>
       )}
 
-      <main className="grid min-h-0 flex-1 grid-cols-1 overflow-auto lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_340px] xl:overflow-hidden 2xl:grid-cols-[280px_minmax(0,1fr)_360px]">
-        <aside className="min-h-[220px] border-b border-border bg-white lg:min-h-0 lg:border-b-0 lg:border-r">
+      <main className="grid min-h-0 flex-1 grid-cols-[220px_minmax(420px,1fr)_320px] overflow-auto 2xl:grid-cols-[280px_minmax(520px,1fr)_360px]">
+        <aside className="min-h-0 border-r border-border bg-white">
           <PanelHeader title="Skill Sources">
             <IconButton title="Add source" onClick={() => setAddSourceOpen(true)}>
               <FolderPlus className="h-4 w-4" />
@@ -217,7 +217,7 @@ function App() {
           </div>
         </aside>
 
-        <section className="min-h-[420px] border-b border-border bg-slate-50 lg:min-h-0 lg:border-b-0 xl:border-r">
+        <section className="min-h-0 border-r border-border bg-slate-50">
           <PanelHeader title="Skills">
             <Button variant="outline" onClick={rescan} disabled={loading}>
               <RefreshCcw className={cn("h-4 w-4", loading && "animate-spin")} />
@@ -308,7 +308,7 @@ function App() {
           </div>
         </section>
 
-        <aside className="min-h-[420px] bg-white lg:col-span-2 xl:col-span-1 xl:min-h-0">
+        <aside className="min-h-0 bg-white">
           <PanelHeader title="Skill Detail" />
           <SkillDetail
             skill={selectedSkill}
