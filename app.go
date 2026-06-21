@@ -208,6 +208,32 @@ func (a *App) ResolveConflict(skillID string) (skillmgr.Inventory, error) {
 	return a.inventory, nil
 }
 
+func (a *App) ReadSkillEnvFile(skillID string) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	skill, err := a.findSkillLocked(skillID)
+	if err != nil {
+		return "", err
+	}
+	return a.service.ReadEnvFile(skill)
+}
+
+func (a *App) SaveSkillEnvFile(skillID string, content string) (skillmgr.Inventory, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	skill, err := a.findSkillLocked(skillID)
+	if err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	if err := a.service.SaveEnvFile(skill, content); err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	if err := a.refreshLocked(a.ctx); err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	return a.inventory, nil
+}
+
 func (a *App) OpenPath(path string) error {
 	if path == "" {
 		return errors.New("path is required")

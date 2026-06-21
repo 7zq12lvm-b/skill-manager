@@ -26,6 +26,10 @@ export function OpenPath(arg1) {
   return window['go']['main']['App']['OpenPath'](arg1);
 }
 
+export function ReadSkillEnvFile(arg1) {
+  return window['go']['main']['App']['ReadSkillEnvFile'](arg1);
+}
+
 export function RemoveSource(arg1) {
   return window['go']['main']['App']['RemoveSource'](arg1);
 }
@@ -44,4 +48,8 @@ export function ResolveConflict(arg1) {
 
 export function SaveConfig(arg1) {
   return window['go']['main']['App']['SaveConfig'](arg1);
+}
+
+export function SaveSkillEnvFile(arg1, arg2) {
+  return window['go']['main']['App']['SaveSkillEnvFile'](arg1, arg2);
 }

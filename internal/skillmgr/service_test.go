@@ -231,6 +231,50 @@ func TestDuplicateSkillActiveSourceIsStillMarkedActive(t *testing.T) {
 	}
 }
 
+func TestReadEnvFileReturnsEmptyWhenMissing(t *testing.T) {
+	root := t.TempDir()
+	skillPath := filepath.Join(root, "source", "env-skill")
+	mustWrite(t, filepath.Join(skillPath, "SKILL.md"), "# env skill\n")
+
+	content, err := NewService().ReadEnvFile(Skill{SourcePath: skillPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if content != "" {
+		t.Fatalf("expected missing .env to read as empty content, got %q", content)
+	}
+}
+
+func TestSaveEnvFileWritesEnvInSkillFolder(t *testing.T) {
+	root := t.TempDir()
+	skillPath := filepath.Join(root, "source", "env-skill")
+	mustWrite(t, filepath.Join(skillPath, "SKILL.md"), "# env skill\n")
+
+	err := NewService().SaveEnvFile(Skill{SourcePath: skillPath}, "API_KEY=secret\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(skillPath, ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "API_KEY=secret\n" {
+		t.Fatalf("unexpected .env content: %q", string(content))
+	}
+}
+
+func TestSaveEnvFileRefusesNonSkillFolder(t *testing.T) {
+	root := t.TempDir()
+	notSkillPath := filepath.Join(root, "source", "not-skill")
+	mustMkdir(t, notSkillPath)
+
+	err := NewService().SaveEnvFile(Skill{SourcePath: notSkillPath}, "API_KEY=secret\n")
+	if err == nil {
+		t.Fatal("expected saving .env to require a SKILL.md folder")
+	}
+}
+
 func TestScanSkipsDotGitAndFoldersWithoutSkillFile(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "source")

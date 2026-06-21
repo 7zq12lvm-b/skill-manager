@@ -70,6 +70,8 @@ function App() {
     disableSkill,
     resolveConflict,
     saveConfig,
+    readSkillEnv,
+    saveSkillEnv,
     openPath,
     selectSkill,
     setSelectedSourceId,
@@ -378,6 +380,8 @@ function App() {
             onEnable={enableSkill}
             onDisable={requestDisable}
             onResolve={resolveConflict}
+            onReadEnv={readSkillEnv}
+            onSaveEnv={saveSkillEnv}
           />
         </aside>
       </main>
@@ -522,12 +526,16 @@ function SkillDetail({
   onEnable,
   onDisable,
   onResolve,
+  onReadEnv,
+  onSaveEnv,
 }: {
   skill?: skillmgr.Skill;
   onOpen: (path: string) => void;
   onEnable: (skillId: string) => void;
   onDisable: (skill: skillmgr.Skill) => void;
   onResolve: (skillId: string) => void;
+  onReadEnv: (skillId: string) => Promise<string>;
+  onSaveEnv: (skillId: string, content: string) => Promise<void>;
 }) {
   if (!skill) {
     return <div className="p-5 text-sm text-muted-foreground">No skill selected.</div>;
@@ -597,6 +605,8 @@ function SkillDetail({
         </DetailSection>
       )}
 
+      <EnvEditor skill={skill} onReadEnv={onReadEnv} onSaveEnv={onSaveEnv} />
+
       <div className="sticky bottom-0 mt-5 flex flex-wrap gap-2 border-t border-border bg-white pt-4">
         <Button variant="outline" onClick={() => onOpen(skill.sourcePath)}>
           <Folder className="h-4 w-4" />
@@ -615,6 +625,84 @@ function SkillDetail({
         )}
       </div>
     </div>
+  );
+}
+
+function EnvEditor({
+  skill,
+  onReadEnv,
+  onSaveEnv,
+}: {
+  skill: skillmgr.Skill;
+  onReadEnv: (skillId: string) => Promise<string>;
+  onSaveEnv: (skillId: string, content: string) => Promise<void>;
+}) {
+  const [content, setContent] = useState("");
+  const [savedContent, setSavedContent] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const dirty = content !== savedContent;
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    onReadEnv(skill.id)
+      .then((value) => {
+        if (cancelled) return;
+        setContent(value);
+        setSavedContent(value);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onReadEnv, skill.id]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await onSaveEnv(skill.id, content);
+      setSavedContent(content);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function reload() {
+    setLoading(true);
+    const value = await onReadEnv(skill.id);
+    setContent(value);
+    setSavedContent(value);
+    setLoading(false);
+  }
+
+  return (
+    <DetailSection title="Preview: .env">
+      <div className="rounded-md border border-border bg-white">
+        <textarea
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+          spellCheck={false}
+          placeholder="KEY=value"
+          className="min-h-40 w-full resize-y border-0 bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100 outline-none placeholder:text-slate-500"
+        />
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-slate-50 px-3 py-2">
+          <span className="text-xs text-muted-foreground">
+            {loading ? "Loading .env..." : dirty ? "Unsaved changes" : ".env saved"}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={reload} disabled={loading || saving}>
+              Reload
+            </Button>
+            <Button onClick={save} disabled={loading || saving || !dirty}>
+              {saving ? "Saving" : "Save .env"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </DetailSection>
   );
 }
 

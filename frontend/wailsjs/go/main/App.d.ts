@@ -14,6 +14,8 @@ export function GetInventory():Promise<skillmgr.Inventory>;
 
 export function OpenPath(arg1:string):Promise<void>;
 
+export function ReadSkillEnvFile(arg1:string):Promise<string>;
+
 export function RemoveSource(arg1:string):Promise<skillmgr.Inventory>;
 
 export function RenameSource(arg1:string,arg2:string):Promise<skillmgr.Inventory>;
@@ -23,3 +25,5 @@ export function RescanAll():Promise<skillmgr.Inventory>;
 export function ResolveConflict(arg1:string):Promise<skillmgr.Inventory>;
 
 export function SaveConfig(arg1:skillmgr.Config):Promise<skillmgr.Inventory>;
+
+export function SaveSkillEnvFile(arg1:string,arg2:string):Promise<skillmgr.Inventory>;

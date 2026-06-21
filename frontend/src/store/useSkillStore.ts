@@ -7,11 +7,13 @@ import {
   EnableSkill,
   GetInventory,
   OpenPath,
+  ReadSkillEnvFile,
   RemoveSource,
   RenameSource,
   RescanAll,
   ResolveConflict,
   SaveConfig,
+  SaveSkillEnvFile,
 } from "../../wailsjs/go/main/App";
 
 type StatusFilter = "all" | string;
@@ -35,6 +37,8 @@ type SkillStore = {
   disableSkill: (skillId: string) => Promise<void>;
   resolveConflict: (skillId: string) => Promise<void>;
   saveConfig: (config: skillmgr.Config) => Promise<void>;
+  readSkillEnv: (skillId: string) => Promise<string>;
+  saveSkillEnv: (skillId: string, content: string) => Promise<void>;
   openPath: (path: string) => Promise<void>;
   selectSkill: (skillId?: string) => void;
   setSelectedSourceId: (sourceId: string) => void;
@@ -93,6 +97,24 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
   disableSkill: async (skillId) => runWithInventory(set, () => DisableSkill(skillId)),
   resolveConflict: async (skillId) => runWithInventory(set, () => ResolveConflict(skillId)),
   saveConfig: async (config) => runWithInventory(set, () => SaveConfig(config)),
+  readSkillEnv: async (skillId) => {
+    try {
+      return await ReadSkillEnvFile(skillId);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error) });
+      return "";
+    }
+  },
+  saveSkillEnv: async (skillId, content) => {
+    set({ loading: true, error: undefined });
+    try {
+      const inventory = await SaveSkillEnvFile(skillId, content);
+      set({ inventory, loading: false });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error), loading: false });
+      throw error;
+    }
+  },
   openPath: async (path) => {
     try {
       await OpenPath(path);

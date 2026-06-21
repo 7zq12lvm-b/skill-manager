@@ -168,6 +168,38 @@ func (s *Service) ResolveConflict(ctx context.Context, config Config, skill Skil
 	return s.Enable(ctx, config, skill)
 }
 
+func (s *Service) ReadEnvFile(skill Skill) (string, error) {
+	if skill.SourcePath == "" {
+		return "", errors.New("skill source path is required")
+	}
+	path := filepath.Join(skill.SourcePath, ".env")
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf(".env is a directory: %s", path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func (s *Service) SaveEnvFile(skill Skill, content string) error {
+	if skill.SourcePath == "" {
+		return errors.New("skill source path is required")
+	}
+	if !hasSkillFile(skill.SourcePath) {
+		return fmt.Errorf("source folder is not a skill: %s", skill.SourcePath)
+	}
+	return os.WriteFile(filepath.Join(skill.SourcePath, ".env"), []byte(content), 0o600)
+}
+
 func deriveStatuses(skills []Skill, targetDir string) {
 	byName := map[string][]int{}
 	for i := range skills {
