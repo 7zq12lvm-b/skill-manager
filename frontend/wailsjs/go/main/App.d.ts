@@ -6,6 +6,8 @@ export function AddSource(arg1:string):Promise<skillmgr.Inventory>;
 
 export function BrowseForSource():Promise<string>;
 
+export function BrowseForTarget():Promise<string>;
+
 export function DisableSkill(arg1:string):Promise<skillmgr.Inventory>;
 
 export function EnableSkill(arg1:string):Promise<skillmgr.Inventory>;

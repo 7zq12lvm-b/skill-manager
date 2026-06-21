@@ -3,6 +3,7 @@ import { skillmgr } from "../../wailsjs/go/models";
 import {
   AddSource,
   BrowseForSource,
+  BrowseForTarget,
   DisableSkill,
   EnableSkill,
   GetInventory,
@@ -31,6 +32,7 @@ type SkillStore = {
   rescan: () => Promise<void>;
   addSource: (path: string) => Promise<void>;
   browseAndAddSource: () => Promise<void>;
+  browseForTarget: () => Promise<string>;
   removeSource: (sourceId: string) => Promise<void>;
   renameSource: (sourceId: string, alias: string) => Promise<void>;
   enableSkill: (skillId: string) => Promise<void>;
@@ -88,6 +90,14 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
       set({ inventory, loading: false });
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error), loading: false });
+    }
+  },
+  browseForTarget: async () => {
+    try {
+      return await BrowseForTarget();
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error) });
+      return "";
     }
   },
   removeSource: async (sourceId) => runWithInventory(set, () => RemoveSource(sourceId)),

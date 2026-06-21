@@ -64,6 +64,7 @@ function App() {
     rescan,
     addSource,
     browseAndAddSource,
+    browseForTarget,
     removeSource,
     renameSource,
     enableSkill,
@@ -416,6 +417,7 @@ function App() {
         <SettingsModal
           inventory={inventory}
           onClose={() => setSettingsOpen(false)}
+          onBrowseTarget={browseForTarget}
           onSave={async (config) => {
             await saveConfig(config);
             setSettingsOpen(false);
@@ -768,10 +770,12 @@ function EnvEditor({
 function SettingsModal({
   inventory,
   onClose,
+  onBrowseTarget,
   onSave,
 }: {
   inventory: skillmgr.Inventory;
   onClose: () => void;
+  onBrowseTarget: () => Promise<string>;
   onSave: (config: skillmgr.Config) => Promise<void>;
 }) {
   const [config, setConfig] = useState(() => skillmgr.Config.createFrom(inventory.config));
@@ -789,12 +793,11 @@ function SettingsModal({
   const removeTargetDir = (index: number) => {
     updateConfig({ targetDirs: targetDirs.filter((_, itemIndex) => itemIndex !== index) });
   };
-  const addTargetDir = () => {
+  const addTargetDir = async () => {
     const trimmed = newTargetDir.trim();
-    if (!trimmed) {
-      return;
-    }
-    updateConfig({ targetDirs: [...targetDirs, trimmed] });
+    const targetDir = trimmed || (await onBrowseTarget());
+    if (!targetDir) return;
+    updateConfig({ targetDirs: [...targetDirs, targetDir] });
     setNewTargetDir("");
   };
 
@@ -823,13 +826,13 @@ function SettingsModal({
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
-                    addTargetDir();
+                    void addTargetDir();
                   }
                 }}
                 className="h-9 min-w-0 flex-1 rounded-md border border-input px-3 text-sm"
                 placeholder="/Users/yusuf/.agents/skills"
               />
-              <Button variant="outline" onClick={addTargetDir}>
+              <Button variant="outline" onClick={() => void addTargetDir()}>
                 Add
               </Button>
             </div>

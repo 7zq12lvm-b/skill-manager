@@ -160,6 +160,12 @@ func (a *App) BrowseForSource() (string, error) {
 	})
 }
 
+func (a *App) BrowseForTarget() (string, error) {
+	return wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
+		Title: "Add Target Skill Directory",
+	})
+}
+
 func (a *App) EnableSkill(skillID string) (skillmgr.Inventory, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

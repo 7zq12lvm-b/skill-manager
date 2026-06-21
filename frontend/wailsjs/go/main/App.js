@@ -10,6 +10,10 @@ export function BrowseForSource() {
   return window['go']['main']['App']['BrowseForSource']();
 }
 
+export function BrowseForTarget() {
+  return window['go']['main']['App']['BrowseForTarget']();
+}
+
 export function DisableSkill(arg1) {
   return window['go']['main']['App']['DisableSkill'](arg1);
 }
