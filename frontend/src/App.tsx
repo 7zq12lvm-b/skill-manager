@@ -131,13 +131,6 @@ function App() {
     setAddSourceOpen(false);
   }
 
-  async function requestDisable(skill: skillmgr.Skill) {
-    const ok = window.confirm(
-      `Disable ${skill.name}?\n\nThis removes only the symlink in the target skill directory. The original skill folder stays in place.`,
-    );
-    if (ok) await disableSkill(skill.id);
-  }
-
   async function requestRemoveSource(source: skillmgr.SkillSource) {
     const ok = window.confirm(
       `Remove ${source.alias || source.path} from scanning?\n\nSource files and existing symlinks will not be deleted.`,
@@ -386,9 +379,6 @@ function App() {
           <PanelHeader title="Skill Detail" />
           <SkillDetail
             skill={selectedSkill}
-            onOpen={openPath}
-            onEnable={enableSkill}
-            onDisable={requestDisable}
             onResolve={resolveConflict}
             onReadEnv={readSkillEnv}
             onSaveEnv={saveSkillEnv}
@@ -532,17 +522,11 @@ function isActiveSkill(skill: skillmgr.Skill) {
 
 function SkillDetail({
   skill,
-  onOpen,
-  onEnable,
-  onDisable,
   onResolve,
   onReadEnv,
   onSaveEnv,
 }: {
   skill?: skillmgr.Skill;
-  onOpen: (path: string) => void;
-  onEnable: (skillId: string) => void;
-  onDisable: (skill: skillmgr.Skill) => void;
   onResolve: (skillId: string) => void;
   onReadEnv: (skillId: string) => Promise<string>;
   onSaveEnv: (skillId: string, content: string) => Promise<void>;
@@ -561,8 +545,8 @@ function SkillDetail({
       </div>
 
       <DetailSection title="Paths">
-        <PathRow label="Source folder" path={skill.sourcePath} onOpen={onOpen} />
-        <PathRow label="Link path" path={skill.symlinkPath} onOpen={onOpen} />
+        <PathRow label="Source folder" path={skill.sourcePath} />
+        <PathRow label="Link path" path={skill.symlinkPath} />
         {skill.symlinkTarget && !skill.isActive && (
           <ReadOnlyRow label="Currently points to" value={skill.symlinkTarget} />
         )}
@@ -618,24 +602,6 @@ function SkillDetail({
       )}
 
       <EnvEditor skill={skill} onReadEnv={onReadEnv} onSaveEnv={onSaveEnv} />
-
-      <div className="sticky bottom-0 mt-5 flex flex-wrap gap-2 border-t border-border bg-white pt-4">
-        <Button variant="outline" onClick={() => onOpen(skill.sourcePath)}>
-          <Folder className="h-4 w-4" />
-          Open
-        </Button>
-        {isActiveSkill(skill) ? (
-          <Button variant="outline" onClick={() => onDisable(skill)}>
-            Disable
-          </Button>
-        ) : skill.status === "conflict" ? (
-          <Button onClick={() => onResolve(skill.id)}>Apply</Button>
-        ) : (
-          <Button onClick={() => onEnable(skill.id)} disabled={["invalid", "error"].includes(skill.status)}>
-            Enable
-          </Button>
-        )}
-      </div>
     </div>
   );
 }
@@ -870,15 +836,10 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
   );
 }
 
-function PathRow({ label, path, onOpen }: { label: string; path: string; onOpen: (path: string) => void }) {
+function PathRow({ label, path }: { label: string; path: string }) {
   return (
     <div className="mb-2 rounded-md border border-border p-2">
-      <div className="mb-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>{label}</span>
-        <button className="rounded p-1 hover:bg-slate-100" onClick={() => onOpen(path)} title={`Open ${label}`}>
-          <ExternalLink className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      <div className="mb-1 text-xs text-muted-foreground">{label}</div>
       <div className="break-all font-mono text-xs text-slate-700">{path}</div>
     </div>
   );
