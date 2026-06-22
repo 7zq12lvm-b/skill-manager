@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -49,6 +49,24 @@ const MIN_SOURCE_WIDTH = 180;
 const MAX_SOURCE_WIDTH = 420;
 const MIN_DETAIL_WIDTH = 260;
 const MAX_DETAIL_WIDTH = 560;
+const SKILLS_COLUMNS_KEY = "skill-manager:skills-column-widths";
+const skillColumnKeys = ["enabled", "skill", "source", "status", "updated"] as const;
+type SkillColumnKey = (typeof skillColumnKeys)[number];
+type SkillColumnWidths = Record<SkillColumnKey, number>;
+const DEFAULT_SKILL_COLUMN_WIDTHS: SkillColumnWidths = {
+  enabled: 14,
+  skill: 38,
+  source: 16,
+  status: 16,
+  updated: 16,
+};
+const MIN_SKILL_COLUMN_WIDTHS: SkillColumnWidths = {
+  enabled: 13,
+  skill: 24,
+  source: 10,
+  status: 12,
+  updated: 12,
+};
 
 function App() {
   const {
@@ -92,6 +110,8 @@ function App() {
   const [detailPanelWidth, setDetailPanelWidth] = useState(() =>
     readStoredWidth(DETAIL_WIDTH_KEY, DEFAULT_DETAIL_WIDTH, MIN_DETAIL_WIDTH, MAX_DETAIL_WIDTH),
   );
+  const [skillColumnWidths, setSkillColumnWidths] = useState(readStoredSkillColumnWidths);
+  const skillsTableRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     load();
@@ -108,6 +128,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem(DETAIL_WIDTH_KEY, String(detailPanelWidth));
   }, [detailPanelWidth]);
+
+  useEffect(() => {
+    localStorage.setItem(SKILLS_COLUMNS_KEY, JSON.stringify(skillColumnWidths));
+  }, [skillColumnWidths]);
 
   const filteredSkills = useMemo(() => {
     const skills = inventory?.skills ?? [];
@@ -150,6 +174,41 @@ function App() {
       } else {
         setDetailPanelWidth(clamp(startDetailWidth - delta, MIN_DETAIL_WIDTH, MAX_DETAIL_WIDTH));
       }
+    };
+
+    const stopResize = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      window.removeEventListener("pointercancel", stopResize);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    window.addEventListener("pointercancel", stopResize);
+  }
+
+  function startSkillColumnResize(leftKey: SkillColumnKey, rightKey: SkillColumnKey, event: React.PointerEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    const tableWidth = skillsTableRef.current?.getBoundingClientRect().width ?? 0;
+    if (tableWidth <= 0) return;
+    const startX = event.clientX;
+    const startWidths = { ...skillColumnWidths };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const rawDelta = ((moveEvent.clientX - startX) / tableWidth) * 100;
+      const minDelta = MIN_SKILL_COLUMN_WIDTHS[leftKey] - startWidths[leftKey];
+      const maxDelta = startWidths[rightKey] - MIN_SKILL_COLUMN_WIDTHS[rightKey];
+      const delta = clamp(rawDelta, minDelta, maxDelta);
+      setSkillColumnWidths({
+        ...startWidths,
+        [leftKey]: startWidths[leftKey] + delta,
+        [rightKey]: startWidths[rightKey] - delta,
+      });
     };
 
     const stopResize = () => {
@@ -314,15 +373,20 @@ function App() {
               ))}
             </select>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto">
-            <table className="min-w-[640px] w-full border-collapse text-sm">
+          <div ref={skillsTableRef} className="min-h-0 flex-1 overflow-auto">
+            <table className="w-full table-fixed border-collapse text-sm">
+              <colgroup>
+                {skillColumnKeys.map((key) => (
+                  <col key={key} style={{ width: `${skillColumnWidths[key]}%` }} />
+                ))}
+              </colgroup>
               <thead className="text-left text-xs font-medium text-muted-foreground">
                 <tr className="border-b border-border">
-                  <th className="sticky top-0 z-20 w-16 bg-slate-100 px-3 py-2">On</th>
-                  <th className="sticky top-0 z-20 bg-slate-100 px-3 py-2">Skill</th>
-                  <th className="sticky top-0 z-20 bg-slate-100 px-3 py-2">Source</th>
-                  <th className="sticky top-0 z-20 bg-slate-100 px-3 py-2">Status</th>
-                  <th className="sticky top-0 z-20 bg-slate-100 px-3 py-2">Updated</th>
+                  <SkillHeaderCell label="On" onResize={(event) => startSkillColumnResize("enabled", "skill", event)} />
+                  <SkillHeaderCell label="Skill" onResize={(event) => startSkillColumnResize("skill", "source", event)} />
+                  <SkillHeaderCell label="Source" onResize={(event) => startSkillColumnResize("source", "status", event)} />
+                  <SkillHeaderCell label="Status" onResize={(event) => startSkillColumnResize("status", "updated", event)} />
+                  <SkillHeaderCell label="Updated" />
                 </tr>
               </thead>
               <tbody>
@@ -335,25 +399,27 @@ function App() {
                     )}
                     onClick={() => selectSkill(skill.id)}
                   >
-                    <td className="px-3 py-2">
+                    <td className="overflow-hidden px-2 py-2">
                       <SkillSwitch
                         skill={skill}
                         onEnable={() => enableSkill(skill.id)}
                         onDisable={() => disableSkill(skill.id)}
                       />
                     </td>
-                    <td className="px-3 py-2">
-                      <div className="font-medium">{skill.name}</div>
-                      <div className="max-w-[360px] truncate text-xs text-muted-foreground">
+                    <td className="min-w-0 overflow-hidden px-3 py-2">
+                      <div className="truncate font-medium">{skill.name}</div>
+                      <div className="truncate text-xs text-muted-foreground">
                         {skill.description || "No description"}
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-muted-foreground">{skill.sourceAlias || skill.sourceId}</td>
-                    <td className="px-3 py-2">
+                    <td className="min-w-0 overflow-hidden px-3 py-2 text-muted-foreground">
+                      <div className="truncate">{skill.sourceAlias || skill.sourceId}</div>
+                    </td>
+                    <td className="min-w-0 overflow-hidden px-3 py-2">
                       <StatusPill status={skill.status} />
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
-                      {formatDate(skill.updatedAt)}
+                    <td className="min-w-0 overflow-hidden px-3 py-2 text-xs text-muted-foreground">
+                      <div className="truncate">{formatDate(skill.updatedAt)}</div>
                     </td>
                   </tr>
                 ))}
@@ -502,6 +568,31 @@ function ResizeHandle({
     >
       <div className="w-px bg-border transition group-hover:w-1 group-hover:bg-blue-400" />
     </div>
+  );
+}
+
+function SkillHeaderCell({
+  label,
+  onResize,
+}: {
+  label: string;
+  onResize?: (event: React.PointerEvent) => void;
+}) {
+  return (
+    <th className="sticky top-0 z-20 bg-slate-100 px-3 py-2">
+      <div className="relative min-w-0">
+        <span className="block truncate">{label}</span>
+        {onResize && (
+          <span
+            role="separator"
+            aria-label={`Resize ${label} column`}
+            title="Resize column"
+            onPointerDown={onResize}
+            className="absolute -right-3 top-1/2 h-6 w-2 -translate-y-1/2 cursor-col-resize rounded hover:bg-blue-400/50"
+          />
+        )}
+      </div>
+    </th>
   );
 }
 
@@ -1158,6 +1249,37 @@ function readStoredWidth(key: string, fallback: number, min: number, max: number
   const value = Number(localStorage.getItem(key));
   if (!Number.isFinite(value)) return fallback;
   return clamp(value, min, max);
+}
+
+function readStoredSkillColumnWidths() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SKILLS_COLUMNS_KEY) ?? "");
+    return normalizeSkillColumnWidths(parsed);
+  } catch {
+    return DEFAULT_SKILL_COLUMN_WIDTHS;
+  }
+}
+
+function normalizeSkillColumnWidths(value: unknown): SkillColumnWidths {
+  if (!value || typeof value !== "object") {
+    return DEFAULT_SKILL_COLUMN_WIDTHS;
+  }
+  const widths = { ...DEFAULT_SKILL_COLUMN_WIDTHS };
+  for (const key of skillColumnKeys) {
+    const next = Number((value as Partial<SkillColumnWidths>)[key]);
+    if (Number.isFinite(next)) {
+      widths[key] = Math.max(MIN_SKILL_COLUMN_WIDTHS[key], next);
+    }
+  }
+  const total = skillColumnKeys.reduce((sum, key) => sum + widths[key], 0);
+  if (total <= 0) {
+    return DEFAULT_SKILL_COLUMN_WIDTHS;
+  }
+  const normalized = { ...widths };
+  for (const key of skillColumnKeys) {
+    normalized[key] = (widths[key] / total) * 100;
+  }
+  return normalized;
 }
 
 function clamp(value: number, min: number, max: number) {
