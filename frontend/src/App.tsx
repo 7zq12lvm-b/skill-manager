@@ -315,13 +315,13 @@ function App() {
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
             <table className="min-w-[640px] w-full border-collapse text-sm">
-              <thead className="sticky top-0 bg-slate-100 text-left text-xs font-medium text-muted-foreground">
+              <thead className="text-left text-xs font-medium text-muted-foreground">
                 <tr className="border-b border-border">
-                  <th className="w-16 px-3 py-2">On</th>
-                  <th className="px-3 py-2">Skill</th>
-                  <th className="px-3 py-2">Source</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Updated</th>
+                  <th className="sticky top-0 z-20 w-16 bg-slate-100 px-3 py-2">On</th>
+                  <th className="sticky top-0 z-20 bg-slate-100 px-3 py-2">Skill</th>
+                  <th className="sticky top-0 z-20 bg-slate-100 px-3 py-2">Source</th>
+                  <th className="sticky top-0 z-20 bg-slate-100 px-3 py-2">Status</th>
+                  <th className="sticky top-0 z-20 bg-slate-100 px-3 py-2">Updated</th>
                 </tr>
               </thead>
               <tbody>
