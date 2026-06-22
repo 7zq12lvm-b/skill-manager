@@ -200,18 +200,18 @@ function App() {
       )}
 
       <main
-        className="grid min-h-0 flex-1 overflow-auto"
+        className="grid min-h-0 flex-1 overflow-hidden"
         style={{
           gridTemplateColumns: `${sourcePanelWidth}px 8px minmax(420px, 1fr) 8px ${detailPanelWidth}px`,
         }}
       >
-        <aside className="min-h-0 bg-white">
+        <aside className="flex min-h-0 flex-col overflow-hidden bg-white">
           <PanelHeader title="Skill Sources">
             <IconButton title="Add source" onClick={() => setAddSourceOpen(true)}>
               <FolderPlus className="h-4 w-4" />
             </IconButton>
           </PanelHeader>
-          <div className="space-y-2 overflow-y-auto p-3">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
             {(inventory?.sources ?? []).map((source) => (
               <div
                 key={source.id}
@@ -271,14 +271,14 @@ function App() {
 
         <ResizeHandle label="Resize Skill Sources" onPointerDown={(event) => startColumnResize("source", event)} />
 
-        <section className="min-h-0 bg-slate-50">
+        <section className="flex min-h-0 flex-col overflow-hidden bg-slate-50">
           <PanelHeader title="Skills">
             <Button variant="outline" onClick={rescan} disabled={loading}>
               <RefreshCcw className={cn("h-4 w-4", loading && "animate-spin")} />
               Rescan
             </Button>
           </PanelHeader>
-          <div className="flex flex-wrap gap-2 border-b border-border bg-white p-3">
+          <div className="shrink-0 flex flex-wrap gap-2 border-b border-border bg-white p-3">
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <input
@@ -313,7 +313,7 @@ function App() {
               ))}
             </select>
           </div>
-          <div className="min-h-0 overflow-auto">
+          <div className="min-h-0 flex-1 overflow-auto">
             <table className="min-w-[640px] w-full border-collapse text-sm">
               <thead className="sticky top-0 bg-slate-100 text-left text-xs font-medium text-muted-foreground">
                 <tr className="border-b border-border">
@@ -366,7 +366,7 @@ function App() {
 
         <ResizeHandle label="Resize Skill Detail" onPointerDown={(event) => startColumnResize("detail", event)} />
 
-        <aside className="min-h-0 bg-white">
+        <aside className="flex min-h-0 flex-col overflow-hidden bg-white">
           <PanelHeader title="Skill Detail" />
           <SkillDetail
             skill={selectedSkill}
@@ -549,7 +549,7 @@ function SkillDetail({
     return <div className="p-5 text-sm text-muted-foreground">No skill selected.</div>;
   }
   return (
-    <div className="h-full overflow-y-auto p-5">
+    <div className="min-h-0 flex-1 overflow-y-auto p-5">
       <div className="mb-5 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-xl font-semibold">{skill.name}</h2>
@@ -1017,7 +1017,7 @@ function IssueLine({ value }: { value: string }) {
 
 function PanelHeader({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
-    <div className="flex h-14 items-center justify-between border-b border-border px-4">
+    <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
       <h2 className="text-sm font-semibold">{title}</h2>
       {children}
     </div>
