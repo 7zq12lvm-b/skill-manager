@@ -47,8 +47,9 @@ const DEFAULT_SOURCE_WIDTH = 260;
 const DEFAULT_DETAIL_WIDTH = 340;
 const MIN_SOURCE_WIDTH = 180;
 const MAX_SOURCE_WIDTH = 420;
-const MIN_DETAIL_WIDTH = 260;
+const MIN_DETAIL_WIDTH = 220;
 const MAX_DETAIL_WIDTH = 560;
+const RESIZE_HANDLE_WIDTH = 8;
 const SKILLS_COLUMNS_KEY = "skill-manager:skills-column-widths";
 const skillColumnKeys = ["enabled", "skill", "source", "status", "updated"] as const;
 type SkillColumnKey = (typeof skillColumnKeys)[number];
@@ -151,6 +152,7 @@ function App() {
     filteredSkills.find((skill) => skill.id === selectedSkillId) ??
     inventory?.skills?.find((skill) => skill.id === selectedSkillId) ??
     filteredSkills[0];
+  const workbenchGridColumns = buildWorkbenchGridColumns(sourcePanelWidth, detailPanelWidth);
 
   async function submitSource() {
     if (!sourcePath.trim()) return;
@@ -262,7 +264,7 @@ function App() {
       <main
         className="grid min-h-0 flex-1 overflow-hidden"
         style={{
-          gridTemplateColumns: `${sourcePanelWidth}px 8px minmax(420px, 1fr) 8px ${detailPanelWidth}px`,
+          gridTemplateColumns: workbenchGridColumns,
         }}
       >
         <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
@@ -1231,6 +1233,17 @@ function targetDirsLabel(targetDirs?: string[]) {
     return targetDirs[0];
   }
   return `${targetDirs.length} targets`;
+}
+
+function buildWorkbenchGridColumns(sourceWidth: number, detailWidth: number) {
+  const fixedChromeWidth = RESIZE_HANDLE_WIDTH * 2;
+  const sourceMin = `min(${MIN_SOURCE_WIDTH}px, calc((100% - ${fixedChromeWidth}px) * 0.24))`;
+  const detailMin = `min(${MIN_DETAIL_WIDTH}px, calc((100% - ${fixedChromeWidth}px) * 0.34))`;
+  const sourceMax = `min(${sourceWidth}px, calc((100% - ${fixedChromeWidth}px) * 0.28))`;
+  const detailMax = `min(${detailWidth}px, calc((100% - ${fixedChromeWidth}px) * 0.45))`;
+  const sourceColumn = `clamp(${sourceMin}, ${sourceMax}, ${MAX_SOURCE_WIDTH}px)`;
+  const detailColumn = `clamp(${detailMin}, ${detailMax}, ${MAX_DETAIL_WIDTH}px)`;
+  return `${sourceColumn} ${RESIZE_HANDLE_WIDTH}px minmax(0, 1fr) ${RESIZE_HANDLE_WIDTH}px ${detailColumn}`;
 }
 
 function formatDate(value?: string) {
