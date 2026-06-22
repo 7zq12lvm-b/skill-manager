@@ -254,6 +254,21 @@ func (a *App) OpenPath(path string) error {
 	}
 }
 
+func (a *App) OpenInVSCode(path string) error {
+	if path == "" {
+		return errors.New("path is required")
+	}
+	if runtime.GOOS == "darwin" {
+		if err := exec.Command("open", "-b", "com.microsoft.VSCode", path).Run(); err == nil {
+			return nil
+		}
+	}
+	if _, err := exec.LookPath("code"); err != nil {
+		return errors.New("VS Code command not found")
+	}
+	return exec.Command("code", path).Start()
+}
+
 func (a *App) refreshLocked(ctx context.Context) error {
 	inventory, err := a.service.Scan(ctx, a.config)
 	if err != nil {

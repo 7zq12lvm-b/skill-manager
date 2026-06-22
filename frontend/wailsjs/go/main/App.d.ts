@@ -14,6 +14,8 @@ export function EnableSkill(arg1:string):Promise<skillmgr.Inventory>;
 
 export function GetInventory():Promise<skillmgr.Inventory>;
 
+export function OpenInVSCode(arg1:string):Promise<void>;
+
 export function OpenPath(arg1:string):Promise<void>;
 
 export function ReadSkillEnvFile(arg1:string):Promise<string>;

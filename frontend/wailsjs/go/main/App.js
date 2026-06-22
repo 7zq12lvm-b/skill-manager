@@ -26,6 +26,10 @@ export function GetInventory() {
   return window['go']['main']['App']['GetInventory']();
 }
 
+export function OpenInVSCode(arg1) {
+  return window['go']['main']['App']['OpenInVSCode'](arg1);
+}
+
 export function OpenPath(arg1) {
   return window['go']['main']['App']['OpenPath'](arg1);
 }

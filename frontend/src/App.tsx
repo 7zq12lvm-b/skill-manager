@@ -73,6 +73,7 @@ function App() {
     saveConfig,
     readSkillEnv,
     saveSkillEnv,
+    openInVSCode,
     openPath,
     selectSkill,
     setSelectedSourceId,
@@ -367,7 +368,15 @@ function App() {
         <ResizeHandle label="Resize Skill Detail" onPointerDown={(event) => startColumnResize("detail", event)} />
 
         <aside className="flex min-h-0 flex-col overflow-hidden bg-white">
-          <PanelHeader title="Skill Detail" />
+          <PanelHeader title="Skill Detail">
+            <IconButton
+              title="Open skill folder in VS Code"
+              disabled={!selectedSkill}
+              onClick={() => selectedSkill && openInVSCode(selectedSkill.sourcePath)}
+            >
+              <VSCodeIcon className="h-4 w-4" />
+            </IconButton>
+          </PanelHeader>
           <SkillDetail
             skill={selectedSkill}
             onResolve={resolveConflict}
@@ -1067,6 +1076,19 @@ function SmallAction({ title, children, onClick }: React.ButtonHTMLAttributes<HT
     >
       {children}
     </button>
+  );
+}
+
+function VSCodeIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+      <path
+        fill="#007ACC"
+        d="M20.8 3.8 16.7 2 8.8 9.3 4.5 6 2.8 6.9v10.2l1.7.9 4.3-3.3 7.9 7.3 4.1-1.8V3.8Z"
+      />
+      <path fill="#1F9CF0" d="m16.7 7.5-5 4.5 5 4.5V7.5Z" />
+      <path fill="#FFFFFF" fillOpacity="0.18" d="M16.7 2v20l4.1-1.8V3.8L16.7 2Z" />
+    </svg>
   );
 }
 

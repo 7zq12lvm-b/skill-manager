@@ -7,6 +7,7 @@ import {
   DisableSkill,
   EnableSkill,
   GetInventory,
+  OpenInVSCode,
   OpenPath,
   ReadSkillEnvFile,
   RemoveSource,
@@ -41,6 +42,7 @@ type SkillStore = {
   saveConfig: (config: skillmgr.Config) => Promise<void>;
   readSkillEnv: (skillId: string) => Promise<string>;
   saveSkillEnv: (skillId: string, content: string) => Promise<void>;
+  openInVSCode: (path: string) => Promise<void>;
   openPath: (path: string) => Promise<void>;
   selectSkill: (skillId?: string) => void;
   setSelectedSourceId: (sourceId: string) => void;
@@ -128,6 +130,13 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
   openPath: async (path) => {
     try {
       await OpenPath(path);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error) });
+    }
+  },
+  openInVSCode: async (path) => {
+    try {
+      await OpenInVSCode(path);
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });
     }
