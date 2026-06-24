@@ -230,12 +230,30 @@ function App() {
     window.addEventListener("pointercancel", stopResize);
   }
 
+  function resizePanelByKeyboard(kind: "source" | "detail", event: React.KeyboardEvent) {
+    const delta = keyboardResizeDelta(event);
+    if (!delta) return;
+    event.preventDefault();
+    if (kind === "source") {
+      setSourcePanelWidth((width) => clamp(width + delta, MIN_SOURCE_WIDTH, MAX_SOURCE_WIDTH));
+    } else {
+      setDetailPanelWidth((width) => clamp(width - delta, MIN_DETAIL_WIDTH, MAX_DETAIL_WIDTH));
+    }
+  }
+
+  function resizeSkillColumnByKeyboard(leftKey: SkillColumnKey, rightKey: SkillColumnKey, event: React.KeyboardEvent) {
+    const delta = keyboardResizeDelta(event);
+    if (!delta) return;
+    event.preventDefault();
+    setSkillColumnWidths((widths) => adjustSkillColumnWidths(widths, leftKey, rightKey, delta));
+  }
+
   return (
     <div className="app-shell flex h-screen min-w-0 flex-col overflow-hidden bg-background">
       <header className="app-topbar flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <div className="brand-lockup">
-            <img className="brand-mark" src={logoUniversal} alt="" />
+            <img className="brand-mark" src={logoUniversal} alt="" width={36} height={36} />
             <div className="min-w-0">
               <h1 className="brand-title">AI Agent Skill Manager</h1>
               <p className="brand-subtitle max-w-[calc(100vw-2rem)] truncate sm:max-w-[520px]">
@@ -257,14 +275,14 @@ function App() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <IconButton title="Open primary target folder" onClick={() => inventory && openPath(primaryTargetDir(inventory.config))}>
-            <Folder className="h-4 w-4" />
+            <Folder aria-hidden="true" className="h-4 w-4" />
           </IconButton>
           <Button variant="outline" onClick={rescan} disabled={loading}>
-            <RefreshCcw className={cn("h-4 w-4", loading && "animate-spin")} />
+            <RefreshCcw aria-hidden="true" className={cn("h-4 w-4", loading && "animate-spin")} />
             Rescan All
           </Button>
           <IconButton title="Settings" onClick={() => setSettingsOpen(true)}>
-            <Settings className="h-4 w-4" />
+            <Settings aria-hidden="true" className="h-4 w-4" />
           </IconButton>
         </div>
       </header>
@@ -272,8 +290,8 @@ function App() {
       {error && (
         <div className="flex items-center justify-between border-b border-rose-200 bg-rose-50 px-5 py-2 text-sm text-rose-700">
           <span>{error}</span>
-          <button className="rounded p-1 hover:bg-rose-100" onClick={clearError} title="Dismiss">
-            <X className="h-4 w-4" />
+          <button className="rounded p-1 hover:bg-rose-100" onClick={clearError} title="Dismiss" aria-label="Dismiss error">
+            <X aria-hidden="true" className="h-4 w-4" />
           </button>
         </div>
       )}
@@ -287,7 +305,7 @@ function App() {
         <aside className="workbench-panel workbench-panel--sources flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
           <PanelHeader title="Skill Sources">
             <IconButton title="Add source" onClick={() => setAddSourceOpen(true)}>
-              <FolderPlus className="h-4 w-4" />
+              <FolderPlus aria-hidden="true" className="h-4 w-4" />
             </IconButton>
           </PanelHeader>
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
@@ -314,9 +332,9 @@ function App() {
                     <div className="truncate text-xs text-muted-foreground">{source.path}</div>
                   </div>
                   {source.errorCount > 0 ? (
-                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                    <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-600" />
                   ) : (
-                    <Circle className="h-4 w-4 shrink-0 text-emerald-600" />
+                    <Circle aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-600" />
                   )}
                 </div>
                 <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
@@ -325,10 +343,10 @@ function App() {
                 </div>
                 <div className="mt-3 flex gap-1">
                   <SmallAction title="Open" onClick={(event) => action(event, () => openPath(source.path))}>
-                    <ExternalLink className="h-3.5 w-3.5" />
+                    <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
                   </SmallAction>
                   <SmallAction title="Alias" onClick={(event) => action(event, () => setSourceToEdit(source))}>
-                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    <SlidersHorizontal aria-hidden="true" className="h-3.5 w-3.5" />
                   </SmallAction>
                   {source.isGitRepo && (
                     <SmallAction
@@ -336,11 +354,11 @@ function App() {
                       disabled={loading}
                       onClick={(event) => action(event, () => pullSource(source.id))}
                     >
-                      <CloudDownload className={cn("h-3.5 w-3.5", loading && "animate-pulse")} />
+                      <CloudDownload aria-hidden="true" className={cn("h-3.5 w-3.5", loading && "animate-pulse")} />
                     </SmallAction>
                   )}
                   <SmallAction title="Remove" onClick={(event) => action(event, () => setSourceToRemove(source))}>
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
                   </SmallAction>
                 </div>
                 {pullResults[source.id] && (
@@ -362,26 +380,35 @@ function App() {
           </div>
         </aside>
 
-        <ResizeHandle label="Resize Skill Sources" onPointerDown={(event) => startColumnResize("source", event)} />
+        <ResizeHandle
+          label="Resize Skill Sources"
+          onKeyDown={(event) => resizePanelByKeyboard("source", event)}
+          onPointerDown={(event) => startColumnResize("source", event)}
+        />
 
         <section className="workbench-panel workbench-panel--skills flex min-h-0 min-w-0 flex-col overflow-hidden bg-slate-50">
           <PanelHeader title="Skills">
             <Button variant="outline" onClick={rescan} disabled={loading}>
-              <RefreshCcw className={cn("h-4 w-4", loading && "animate-spin")} />
+              <RefreshCcw aria-hidden="true" className={cn("h-4 w-4", loading && "animate-spin")} />
               Rescan
             </Button>
           </PanelHeader>
           <div className="filter-bar shrink-0 flex flex-wrap gap-2 border-b border-border bg-white p-3">
             <div className="relative min-w-0 flex-1">
-              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <input
+                aria-label="Search skills"
+                autoComplete="off"
+                name="skill-search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search skills"
+                placeholder="Search skills…"
                 className="h-9 w-full rounded-md border border-input bg-white pl-8 pr-3 text-sm"
               />
             </div>
             <select
+              aria-label="Filter by source"
+              name="source-filter"
               value={selectedSourceId}
               onChange={(event) => setSelectedSourceId(event.target.value)}
               className="h-9 min-w-[150px] flex-1 rounded-md border border-input bg-white px-2 text-sm sm:flex-none"
@@ -394,6 +421,8 @@ function App() {
               ))}
             </select>
             <select
+              aria-label="Filter by status"
+              name="status-filter"
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
               className="h-9 min-w-[130px] flex-1 rounded-md border border-input bg-white px-2 text-sm sm:flex-none"
@@ -415,10 +444,26 @@ function App() {
               </colgroup>
               <thead className="text-left text-xs font-medium text-muted-foreground">
                 <tr className="border-b border-border">
-                  <SkillHeaderCell label="On" onResize={(event) => startSkillColumnResize("enabled", "skill", event)} />
-                  <SkillHeaderCell label="Skill" onResize={(event) => startSkillColumnResize("skill", "source", event)} />
-                  <SkillHeaderCell label="Source" onResize={(event) => startSkillColumnResize("source", "status", event)} />
-                  <SkillHeaderCell label="Status" onResize={(event) => startSkillColumnResize("status", "updated", event)} />
+                  <SkillHeaderCell
+                    label="On"
+                    onKeyResize={(event) => resizeSkillColumnByKeyboard("enabled", "skill", event)}
+                    onResize={(event) => startSkillColumnResize("enabled", "skill", event)}
+                  />
+                  <SkillHeaderCell
+                    label="Skill"
+                    onKeyResize={(event) => resizeSkillColumnByKeyboard("skill", "source", event)}
+                    onResize={(event) => startSkillColumnResize("skill", "source", event)}
+                  />
+                  <SkillHeaderCell
+                    label="Source"
+                    onKeyResize={(event) => resizeSkillColumnByKeyboard("source", "status", event)}
+                    onResize={(event) => startSkillColumnResize("source", "status", event)}
+                  />
+                  <SkillHeaderCell
+                    label="Status"
+                    onKeyResize={(event) => resizeSkillColumnByKeyboard("status", "updated", event)}
+                    onResize={(event) => startSkillColumnResize("status", "updated", event)}
+                  />
                   <SkillHeaderCell label="Updated" />
                 </tr>
               </thead>
@@ -426,11 +471,20 @@ function App() {
                 {filteredSkills.map((skill) => (
                   <tr
                     key={skill.id}
+                    aria-selected={selectedSkill?.id === skill.id}
                     className={cn(
                       "skill-row cursor-pointer border-b border-border bg-white hover:bg-blue-50/50",
                       selectedSkill?.id === skill.id && "skill-row--selected bg-blue-50",
                     )}
                     onClick={() => selectSkill(skill.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        selectSkill(skill.id);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
                   >
                     <td className="overflow-hidden px-2 py-2">
                       <SkillSwitch
@@ -466,7 +520,11 @@ function App() {
           </div>
         </section>
 
-        <ResizeHandle label="Resize Skill Detail" onPointerDown={(event) => startColumnResize("detail", event)} />
+        <ResizeHandle
+          label="Resize Skill Detail"
+          onKeyDown={(event) => resizePanelByKeyboard("detail", event)}
+          onPointerDown={(event) => startColumnResize("detail", event)}
+        />
 
         <aside className="workbench-panel workbench-panel--detail flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
           <PanelHeader title="Skill Detail">
@@ -494,10 +552,12 @@ function App() {
               Source Directory
               <div className="mt-2 flex gap-2">
                 <input
+                    autoComplete="off"
+                    name="source-directory"
                   value={sourcePath}
                   onChange={(event) => setSourcePath(event.target.value)}
                   className="h-9 min-w-0 flex-1 rounded-md border border-input px-3 text-sm"
-                  placeholder="/Users/yusuf/dev/skills"
+                  placeholder="/Users/yusuf/dev/skills…"
                 />
                 <Button
                   variant="outline"
@@ -587,9 +647,11 @@ function SummaryItem({ label, value, tone = "slate" }: { label: string; value: n
 
 function ResizeHandle({
   label,
+  onKeyDown,
   onPointerDown,
 }: {
   label: string;
+  onKeyDown: (event: React.KeyboardEvent) => void;
   onPointerDown: (event: React.PointerEvent) => void;
 }) {
   return (
@@ -598,6 +660,7 @@ function ResizeHandle({
       role="separator"
       tabIndex={0}
       title={label}
+      onKeyDown={onKeyDown}
       onPointerDown={onPointerDown}
       className="resize-handle group flex min-h-0 cursor-col-resize items-stretch justify-center bg-white"
     >
@@ -608,9 +671,11 @@ function ResizeHandle({
 
 function SkillHeaderCell({
   label,
+  onKeyResize,
   onResize,
 }: {
   label: string;
+  onKeyResize?: (event: React.KeyboardEvent) => void;
   onResize?: (event: React.PointerEvent) => void;
 }) {
   return (
@@ -621,7 +686,9 @@ function SkillHeaderCell({
           <span
             role="separator"
             aria-label={`Resize ${label} column`}
+            tabIndex={0}
             title="Resize column"
+            onKeyDown={onKeyResize}
             onPointerDown={onResize}
             className="column-resize absolute -right-3 top-1/2 h-6 w-2 -translate-y-1/2 cursor-col-resize rounded hover:bg-blue-400/50"
           />
@@ -644,6 +711,9 @@ function SkillSwitch({
   const disabled = ["invalid", "error"].includes(skill.status) || (skill.status === "conflict" && !checked);
   return (
     <button
+      aria-label={`${checked ? "Disable" : "Enable"} ${skill.name}`}
+      aria-checked={checked}
+      role="switch"
       title={checked ? "Disable" : "Enable"}
       disabled={disabled}
       onClick={(event) => {
@@ -732,7 +802,7 @@ function SkillDetail({
                 onClick={() => source.skillId === skill.id && onResolve(skill.id)}
               >
                 <span className="min-w-0 truncate">{source.sourcePath}</span>
-                <ChevronRight className="h-4 w-4 shrink-0" />
+                <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0" />
               </button>
             ))}
           </div>
@@ -751,7 +821,7 @@ function SkillDetail({
 
       {skill.preview && (
         <DetailSection title={`Preview: ${skill.previewFile}`}>
-          <pre className="code-preview max-h-72 max-w-full overflow-auto rounded-md border border-border bg-slate-950 p-3 text-xs leading-5 text-slate-100">
+          <pre className="code-preview code-preview--wrap max-h-72 max-w-full overflow-auto rounded-md border border-border bg-slate-950 p-3 text-xs leading-5 text-slate-100">
             {skill.preview}
           </pre>
         </DetailSection>
@@ -880,22 +950,25 @@ function EnvEditor({
     <DetailSection title=".env overrides">
       <div className="env-editor min-w-0 rounded-md border border-border bg-white">
         <textarea
+          aria-label={`${skill.name} .env overrides`}
+          autoComplete="off"
+          name={`${skill.id}-env-overrides`}
           value={content}
           onChange={(event) => setContent(event.target.value)}
           spellCheck={false}
-          placeholder="KEY=value"
-          className="code-preview min-h-40 min-w-0 w-full resize-y border-0 bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100 outline-none placeholder:text-slate-500"
+          placeholder="KEY=value…"
+          className="code-preview min-h-40 min-w-0 w-full resize-y border-0 bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100 outline-none placeholder:text-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
         />
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-slate-50 px-3 py-2">
-          <span className="text-xs text-muted-foreground">
-            {loading ? "Reading .env..." : dirty ? "Unsaved changes" : ".env saved"}
+          <span className="text-xs text-muted-foreground" aria-live="polite">
+            {loading ? "Reading .env…" : dirty ? "Unsaved changes" : ".env saved"}
           </span>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={reload} disabled={loading || saving}>
               Reload
             </Button>
             <Button onClick={save} disabled={loading || saving || !dirty}>
-              {saving ? "Saving" : "Save .env"}
+              {saving ? "Saving…" : "Save .env"}
             </Button>
           </div>
         </div>
@@ -947,17 +1020,23 @@ function SettingsModal({
             {targetDirs.map((targetDir, index) => (
               <div key={`${targetDir}-${index}`} className="flex gap-2">
                 <input
+                  aria-label={`Target skill directory ${index + 1}`}
+                  autoComplete="off"
+                  name={`target-directory-${index}`}
                   value={targetDir}
                   onChange={(event) => updateTargetDir(index, event.target.value)}
                   className="h-9 min-w-0 flex-1 rounded-md border border-input px-3 text-sm"
                 />
                 <IconButton title="Remove target directory" onClick={() => removeTargetDir(index)}>
-                  <X className="h-4 w-4" />
+                  <X aria-hidden="true" className="h-4 w-4" />
                 </IconButton>
               </div>
             ))}
             <div className="flex gap-2">
               <input
+                aria-label="New target skill directory"
+                autoComplete="off"
+                name="new-target-directory"
                 value={newTargetDir}
                 onChange={(event) => setNewTargetDir(event.target.value)}
                 onKeyDown={(event) => {
@@ -967,7 +1046,7 @@ function SettingsModal({
                   }
                 }}
                 className="h-9 min-w-0 flex-1 rounded-md border border-input px-3 text-sm"
-                placeholder="/Users/yusuf/.agents/skills"
+                placeholder="/Users/yusuf/.agents/skills…"
               />
               <Button variant="outline" onClick={() => void addTargetDir()}>
                 Add
@@ -978,6 +1057,7 @@ function SettingsModal({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="flex items-center gap-2 rounded-md border border-border p-3 text-sm">
             <input
+              name="auto-rescan-on-startup"
               type="checkbox"
               checked={config.scan.autoRescanOnStartup}
               onChange={(event) => updateScan({ autoRescanOnStartup: event.target.checked })}
@@ -986,6 +1066,7 @@ function SettingsModal({
           </label>
           <label className="flex items-center gap-2 rounded-md border border-border p-3 text-sm">
             <input
+              name="watch-source-folders"
               type="checkbox"
               checked={config.scan.watchSourceFolders}
               onChange={(event) => updateScan({ watchSourceFolders: event.target.checked })}
@@ -1037,11 +1118,12 @@ function SourceAliasModal({
         <label className="block text-sm font-medium">
           Alias
           <input
+            autoComplete="off"
+            name="source-alias"
             value={alias}
             onChange={(event) => setAlias(event.target.value)}
             className="mt-2 h-9 w-full rounded-md border border-input px-3 text-sm"
-            placeholder={basename(source.path)}
-            autoFocus
+            placeholder={`${basename(source.path)}…`}
           />
         </label>
         <div className="rounded-md border border-border bg-slate-50 p-3 font-mono text-xs text-muted-foreground">
@@ -1052,7 +1134,7 @@ function SourceAliasModal({
             Cancel
           </Button>
           <Button onClick={save} disabled={saving}>
-            {saving ? "Saving" : "Save"}
+            {saving ? "Saving…" : "Save"}
           </Button>
         </div>
       </div>
@@ -1095,7 +1177,7 @@ function RemoveSourceModal({
             Cancel
           </Button>
           <Button onClick={remove} disabled={removing}>
-            {removing ? "Removing" : "Remove Source"}
+            {removing ? "Removing…" : "Remove Source"}
           </Button>
         </div>
       </div>
@@ -1111,9 +1193,9 @@ function StatusPill({ status }: { status: string }) {
         statusClass[status] ?? statusClass.disabled,
       )}
     >
-      {status === "synced" && <Check className="h-3 w-3" />}
-      {status === "conflict" && <AlertTriangle className="h-3 w-3" />}
-      {status === "syncing" && <Loader2 className="h-3 w-3 animate-spin" />}
+      {status === "synced" && <Check aria-hidden="true" className="h-3 w-3" />}
+      {status === "conflict" && <AlertTriangle aria-hidden="true" className="h-3 w-3" />}
+      {status === "syncing" && <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin" />}
       {statusLabels[status] ?? status}
     </span>
   );
@@ -1183,25 +1265,44 @@ function Button({
   );
 }
 
-function IconButton({ className, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+function IconButton({
+  className,
+  title,
+  "aria-label": ariaLabel,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const accessibleLabel = ariaLabel ?? (typeof title === "string" ? title : undefined);
   return (
     <button
+      aria-label={accessibleLabel}
       className={cn(
         "icon-button inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-white text-slate-700 transition hover:bg-slate-50 disabled:opacity-50",
         className,
       )}
+      title={title}
+      type="button"
       {...props}
     />
   );
 }
 
-function SmallAction({ className, children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+function SmallAction({
+  className,
+  children,
+  title,
+  "aria-label": ariaLabel,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const accessibleLabel = ariaLabel ?? (typeof title === "string" ? title : undefined);
   return (
     <button
+      aria-label={accessibleLabel}
       className={cn(
         "small-action inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-white hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-50",
         className,
       )}
+      title={title}
+      type="button"
       {...props}
     >
       {children}
@@ -1237,7 +1338,7 @@ function Modal({
         <div className="panel-header flex h-14 items-center justify-between border-b border-border px-5">
           <h2 className="text-base font-semibold">{title}</h2>
           <IconButton title="Close" onClick={onClose}>
-            <X className="h-4 w-4" />
+            <X aria-hidden="true" className="h-4 w-4" />
           </IconButton>
         </div>
         <div className="p-5">{children}</div>
@@ -1268,6 +1369,29 @@ function targetDirsLabel(targetDirs?: string[]) {
     return targetDirs[0];
   }
   return `${targetDirs.length} targets`;
+}
+
+function keyboardResizeDelta(event: React.KeyboardEvent) {
+  const step = event.shiftKey ? 24 : 8;
+  if (event.key === "ArrowLeft") return -step;
+  if (event.key === "ArrowRight") return step;
+  return 0;
+}
+
+function adjustSkillColumnWidths(
+  widths: SkillColumnWidths,
+  leftKey: SkillColumnKey,
+  rightKey: SkillColumnKey,
+  delta: number,
+) {
+  const minDelta = MIN_SKILL_COLUMN_WIDTHS[leftKey] - widths[leftKey];
+  const maxDelta = widths[rightKey] - MIN_SKILL_COLUMN_WIDTHS[rightKey];
+  const adjustedDelta = clamp(delta, minDelta, maxDelta);
+  return {
+    ...widths,
+    [leftKey]: widths[leftKey] + adjustedDelta,
+    [rightKey]: widths[rightKey] - adjustedDelta,
+  };
 }
 
 function buildWorkbenchGridColumns(sourceWidth: number, detailWidth: number) {

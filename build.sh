@@ -15,8 +15,8 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ -z "${WAILS_BIN}" ]]; then
-  if [[ -x "/Users/yusuf/go/bin/wails" ]]; then
-    WAILS_BIN="/Users/yusuf/go/bin/wails"
+  if [[ -x "${HOME}/go/bin/wails" ]]; then
+    WAILS_BIN="${HOME}/go/bin/wails"
   elif WAILS_BIN="$(command -v wails 2>/dev/null)"; then
     :
   else

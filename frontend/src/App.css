@@ -169,6 +169,8 @@
 .skill-row {
   position: relative;
   border-color: var(--sm-line);
+  content-visibility: auto;
+  contain-intrinsic-size: 42px;
 }
 
 .skill-row:hover {
@@ -304,6 +306,13 @@
   font-family: "SFMono-Regular", "Cascadia Code", "Liberation Mono", Menlo, monospace;
 }
 
+.code-preview--wrap {
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .issue-line {
   border-color: color-mix(in srgb, var(--sm-danger), white 54%) !important;
   background: var(--sm-danger-soft) !important;
@@ -339,6 +348,7 @@
 }
 
 .modal-backdrop {
+  overscroll-behavior: contain;
   background: rgb(18 24 38 / 0.42) !important;
   backdrop-filter: blur(2px);
 }
@@ -358,9 +368,9 @@ textarea {
   border-color: var(--sm-line) !important;
 }
 
-input:focus,
-select:focus,
-textarea:focus {
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
   border-color: var(--sm-link) !important;
 }
 
