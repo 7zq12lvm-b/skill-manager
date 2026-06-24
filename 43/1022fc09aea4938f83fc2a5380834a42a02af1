@@ -1,0 +1,72 @@
+frontend/tailwind.config.js
+  s_5b8e5c1a732b3f::t_4437374d9b19eb 8,12-13,18-22,24-25,28-29
+frontend/wailsjs/go/models.ts
+  s_3a1b7878929555::t_60e9c88c2d54d2 323-354
+  s_3a1b7878929555::t_ddb178084d0dd7 262-263,279-280
+frontend/src/App.tsx
+  s_5b8e5c1a732b3f::t_5222b5a7d8f818 576-579,582,602,604,617,626
+  s_3a1b7878929555::t_64502b13c8ace8 1198,1201,1203-1205
+  s_5b8e5c1a732b3f::t_a00677d28808ce 999,1110,1124,1133,1142,1151,1157,1173-1176,1190,1202,1235-1237
+  s_5b8e5c1a732b3f::t_15835715535d97 654-655,701,745,754,772,880-881,887,891
+  s_3a1b7878929555::t_1ecb80a9bb060a 83,346-350
+  s_3a1b7878929555::t_61c35fdf300811 7,92,333-341
+  s_5b8e5c1a732b3f::t_63686622d18d0e 23,37-43,234-235,237-253,282,287,300-301,355-356,367,374,380,389,401,430-431,445,462-464,471
+internal/service_test.go
+  s_3a1b7878929555::t_0b5298caf03433 497
+  s_3a1b7878929555::t_76b68170b9161a 1-470,477-496,500-530,536-539,541-543
+  s_3a1b7878929555::t_087029e6890d0f 471-476,498-499,531-535,540
+frontend/wailsjs/go/main/App.d.ts
+  s_3a1b7878929555::t_c4b927c2da088c 22
+  s_3a1b7878929555::t_936de3b8141b82 21
+app.go
+  s_3a1b7878929555::t_3794001589d4c4 156-160
+  s_3a1b7878929555::t_980455d9132391 148,153,162-164,170,172
+  s_3a1b7878929555::t_2530f87d47912e 12,149-152,154-155,161,165-169,171,173-174,337-344
+  s_3a1b7878929555::t_d399252f132bfa 14
+internal/service.go
+  s_3a1b7878929555::t_f8bcd8e4c93bf5 1-101,103-652
+  s_3a1b7878929555::t_014121af24b8c8 102
+frontend/wailsjs/go/main/App.js
+  s_3a1b7878929555::t_5106864d2d6c82 37-40
+internal/git.go
+  s_3a1b7878929555::t_891f02f78e7728 1-23,25,27-28,30-31,33-43,45,51
+  s_3a1b7878929555::t_66882ae7669881 24,26,29,32,44,46-50
+frontend/src/App.css
+  s_5b8e5c1a732b3f::t_39e3167446ed1e 2-20,22-381
+  s_5b8e5c1a732b3f::t_f7ec44a87367b1 1
+frontend/src/store/useSkillStore.ts
+  s_3a1b7878929555::t_889c77b1faa124 12,41
+  s_3a1b7878929555::t_7aae2cf3ccfded 32,89,126-138
+  s_3a1b7878929555::t_b61a3dc85179f4 70-83
+internal/types.go
+  s_3a1b7878929555::t_7177ab7b037997 1-56,62-161
+  s_3a1b7878929555::t_bb85e3b39e3e67 57-61
+.gitignore
+  s_3a1b7878929555::t_bea8878f3cbd59 3-4
+frontend/src/style.css
+  s_5b8e5c1a732b3f::t_70ba72c1b86754 5-12,25-26,28,32-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.11",
+  "base_commit_sha": "431022fc09aea4938f83fc2a5380834a42a02af1",
+  "prompts": {},
+  "sessions": {
+    "s_3a1b7878929555": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef269-bd30-7a62-8b31-75e1244ab9e0",
+        "model": "gpt-5.5"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    },
+    "s_5b8e5c1a732b3f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef850-4acb-7b30-a438-ba9180309a68",
+        "model": "gpt-5.5"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
