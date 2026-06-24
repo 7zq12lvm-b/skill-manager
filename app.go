@@ -9,8 +9,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"time"
 
-	"skill-manager/internal/skillmgr"
+	"skill-manager/internal"
 
 	"github.com/fsnotify/fsnotify"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -142,6 +143,33 @@ func (a *App) RenameSource(sourceID string, alias string) (skillmgr.Inventory, e
 		return skillmgr.Inventory{}, err
 	}
 	return a.inventory, nil
+}
+
+func (a *App) PullSource(sourceID string) (skillmgr.PullSourceResult, error) {
+	a.mu.Lock()
+	source, err := a.findSourceConfigLocked(sourceID)
+	a.mu.Unlock()
+	if err != nil {
+		return skillmgr.PullSourceResult{}, err
+	}
+
+	baseCtx := a.ctx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(baseCtx, 2*time.Minute)
+	defer cancel()
+	message, err := a.service.PullSource(ctx, source)
+	if err != nil {
+		return skillmgr.PullSourceResult{}, err
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.refreshLocked(a.ctx); err != nil {
+		return skillmgr.PullSourceResult{}, err
+	}
+	return skillmgr.PullSourceResult{Inventory: a.inventory, Message: message}, nil
 }
 
 func (a *App) SaveConfig(config skillmgr.Config) (skillmgr.Inventory, error) {
@@ -304,6 +332,15 @@ func (a *App) findSkillLocked(skillID string) (skillmgr.Skill, error) {
 		}
 	}
 	return skillmgr.Skill{}, fmt.Errorf("skill not found: %s", skillID)
+}
+
+func (a *App) findSourceConfigLocked(sourceID string) (skillmgr.SkillSourceConfig, error) {
+	for _, source := range a.config.Sources {
+		if source.ID == sourceID {
+			return source, nil
+		}
+	}
+	return skillmgr.SkillSourceConfig{}, fmt.Errorf("source not found: %s", sourceID)
 }
 
 func (a *App) restartWatcherLocked() error {

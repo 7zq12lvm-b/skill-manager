@@ -54,11 +54,18 @@ type Inventory struct {
 	Summary Summary       `json:"summary"`
 }
 
+type PullSourceResult struct {
+	Inventory Inventory `json:"inventory"`
+	Message   string    `json:"message"`
+}
+
 type SkillSource struct {
 	ID            string `json:"id"`
 	Path          string `json:"path"`
 	Alias         string `json:"alias,omitempty"`
 	Enabled       bool   `json:"enabled"`
+	IsGitRepo     bool   `json:"isGitRepo"`
+	GitRoot       string `json:"gitRoot,omitempty"`
 	SkillCount    int    `json:"skillCount"`
 	LastScannedAt string `json:"lastScannedAt,omitempty"`
 	ErrorCount    int    `json:"errorCount"`

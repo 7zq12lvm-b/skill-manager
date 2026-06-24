@@ -34,6 +34,10 @@ export function OpenPath(arg1) {
   return window['go']['main']['App']['OpenPath'](arg1);
 }
 
+export function PullSource(arg1) {
+  return window['go']['main']['App']['PullSource'](arg1);
+}
+
 export function ReadSkillEnvFile(arg1) {
   return window['go']['main']['App']['ReadSkillEnvFile'](arg1);
 }

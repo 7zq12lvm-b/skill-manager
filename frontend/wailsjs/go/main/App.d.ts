@@ -18,6 +18,8 @@ export function OpenInVSCode(arg1:string):Promise<void>;
 
 export function OpenPath(arg1:string):Promise<void>;
 
+export function PullSource(arg1:string):Promise<skillmgr.PullSourceResult>;
+
 export function ReadSkillEnvFile(arg1:string):Promise<string>;
 
 export function RemoveSource(arg1:string):Promise<skillmgr.Inventory>;

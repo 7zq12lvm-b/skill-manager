@@ -9,6 +9,7 @@ import {
   GetInventory,
   OpenInVSCode,
   OpenPath,
+  PullSource,
   ReadSkillEnvFile,
   RemoveSource,
   RenameSource,
@@ -28,6 +29,7 @@ type SkillStore = {
   query: string;
   loading: boolean;
   error?: string;
+  pullResults: Record<string, string>;
   setInventory: (inventory: skillmgr.Inventory) => void;
   load: () => Promise<void>;
   rescan: () => Promise<void>;
@@ -36,6 +38,7 @@ type SkillStore = {
   browseForTarget: () => Promise<string>;
   removeSource: (sourceId: string) => Promise<void>;
   renameSource: (sourceId: string, alias: string) => Promise<void>;
+  pullSource: (sourceId: string) => Promise<void>;
   enableSkill: (skillId: string) => Promise<void>;
   disableSkill: (skillId: string) => Promise<void>;
   resolveConflict: (skillId: string) => Promise<void>;
@@ -64,11 +67,26 @@ async function runWithInventory(
   }
 }
 
+function summarizePullMessage(message: string) {
+  const lines = message
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const usefulLine =
+    lines.find((line) => /^Already up to date\.?$/i.test(line)) ??
+    lines.find((line) => /^Updating\b/i.test(line)) ??
+    lines.find((line) => /^Fast-forward\b/i.test(line)) ??
+    lines.find((line) => /^From\b/i.test(line)) ??
+    lines[0];
+  return usefulLine || "Pull completed.";
+}
+
 export const useSkillStore = create<SkillStore>((set, get) => ({
   selectedSourceId: "all",
   statusFilter: "all",
   query: "",
   loading: false,
+  pullResults: {},
   setInventory: (inventory) => {
     const selectedSkillId = get().selectedSkillId;
     const stillExists = inventory.skills?.some((skill) => skill.id === selectedSkillId);
@@ -105,6 +123,19 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
   removeSource: async (sourceId) => runWithInventory(set, () => RemoveSource(sourceId)),
   renameSource: async (sourceId, alias) =>
     runWithInventory(set, () => RenameSource(sourceId, alias)),
+  pullSource: async (sourceId) => {
+    set({ loading: true, error: undefined });
+    try {
+      const result = await PullSource(sourceId);
+      set((state) => ({
+        inventory: result.inventory,
+        loading: false,
+        pullResults: { ...state.pullResults, [sourceId]: summarizePullMessage(result.message) },
+      }));
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error), loading: false });
+    }
+  },
   enableSkill: async (skillId) => runWithInventory(set, () => EnableSkill(skillId)),
   disableSkill: async (skillId) => runWithInventory(set, () => DisableSkill(skillId)),
   resolveConflict: async (skillId) => runWithInventory(set, () => ResolveConflict(skillId)),

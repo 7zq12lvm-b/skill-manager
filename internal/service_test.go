@@ -464,6 +464,42 @@ func TestScanSkipsDotGitAndFoldersWithoutSkillFile(t *testing.T) {
 	assertSkillStatus(t, inventory, "real-skill", StatusDisabled)
 }
 
+func TestScanMarksSourceInsideGitRepository(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	source := filepath.Join(repo, "skills")
+	bin := filepath.Join(root, "bin")
+	mustMkdir(t, bin)
+	mustWriteMode(t, filepath.Join(bin, "git"), "#!/bin/sh\nif [ \"$1\" = \"-C\" ] && [ \"$3\" = \"rev-parse\" ] && [ \"$4\" = \"--show-toplevel\" ]; then\n  printf '%s\\n' \"$TEST_GIT_ROOT\"\n  exit 0\nfi\nexit 1\n", 0o755)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TEST_GIT_ROOT", repo)
+
+	mustMkdir(t, filepath.Join(source, "real-skill"))
+	mustWrite(t, filepath.Join(source, "real-skill", "SKILL.md"), "# real skill\n")
+
+	inventory, err := NewService().Scan(context.Background(), Config{
+		TargetDirs: []string{filepath.Join(root, "target")},
+		Sources: []SkillSourceConfig{{
+			ID:      "local",
+			Path:    source,
+			Enabled: true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(inventory.Sources) != 1 {
+		t.Fatalf("expected one source, got %d", len(inventory.Sources))
+	}
+	if !inventory.Sources[0].IsGitRepo {
+		t.Fatal("expected nested source folder to be marked as inside a git repository")
+	}
+	if inventory.Sources[0].GitRoot != repo {
+		t.Fatalf("expected git root %s, got %s", repo, inventory.Sources[0].GitRoot)
+	}
+}
+
 func assertSkillStatus(t *testing.T, inventory Inventory, name string, status SkillStatus) {
 	t.Helper()
 	for _, skill := range inventory.Skills {
@@ -493,10 +529,15 @@ func mustSymlink(t *testing.T, oldname, newname string) {
 
 func mustWrite(t *testing.T, path string, data string) {
 	t.Helper()
+	mustWriteMode(t, path, data, 0o644)
+}
+
+func mustWriteMode(t *testing.T, path string, data string, mode os.FileMode) {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(data), mode); err != nil {
 		t.Fatal(err)
 	}
 }

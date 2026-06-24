@@ -21,7 +21,7 @@ func NewService() *Service {
 	return &Service{}
 }
 
-func (s *Service) Scan(_ context.Context, config Config) (Inventory, error) {
+func (s *Service) Scan(ctx context.Context, config Config) (Inventory, error) {
 	config = normalizeConfig(config)
 	scannedAt := time.Now().Format(time.RFC3339)
 	sources := make([]SkillSource, 0, len(config.Sources))
@@ -34,6 +34,10 @@ func (s *Service) Scan(_ context.Context, config Config) (Inventory, error) {
 			Alias:         sourceConfig.Alias,
 			Enabled:       sourceConfig.Enabled,
 			LastScannedAt: scannedAt,
+		}
+		if gitRoot, ok := gitRepositoryRoot(ctx, sourceConfig.Path); ok {
+			source.IsGitRepo = true
+			source.GitRoot = gitRoot
 		}
 		if !sourceConfig.Enabled {
 			sources = append(sources, source)
@@ -93,6 +97,10 @@ func (s *Service) Scan(_ context.Context, config Config) (Inventory, error) {
 		Skills:  skills,
 		Summary: summarize(skills),
 	}, nil
+}
+
+func (s *Service) PullSource(ctx context.Context, source SkillSourceConfig) (string, error) {
+	return pullGitRepository(ctx, source.Path)
 }
 
 func (s *Service) Enable(_ context.Context, config Config, skill Skill) error {

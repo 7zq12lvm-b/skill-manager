@@ -5,26 +5,28 @@ export default {
     extend: {
       fontFamily: {
         sans: [
-          "Inter",
+          "ui-sans-serif",
           "-apple-system",
           "BlinkMacSystemFont",
           "Segoe UI",
+          "Helvetica",
+          "Arial",
           "sans-serif",
         ],
       },
       colors: {
-        border: "hsl(214 32% 91%)",
-        input: "hsl(214 32% 91%)",
-        ring: "hsl(215 20% 65%)",
-        background: "hsl(210 20% 98%)",
-        foreground: "hsl(222 47% 11%)",
+        border: "hsl(218 18% 86%)",
+        input: "hsl(218 18% 84%)",
+        ring: "hsl(190 85% 36%)",
+        background: "hsl(78 24% 97%)",
+        foreground: "hsl(218 28% 12%)",
         muted: {
-          DEFAULT: "hsl(210 40% 96%)",
-          foreground: "hsl(215 16% 47%)",
+          DEFAULT: "hsl(205 18% 94%)",
+          foreground: "hsl(218 11% 43%)",
         },
         primary: {
-          DEFAULT: "hsl(221 83% 53%)",
-          foreground: "hsl(210 40% 98%)",
+          DEFAULT: "hsl(190 85% 32%)",
+          foreground: "hsl(180 40% 98%)",
         },
       },
     },

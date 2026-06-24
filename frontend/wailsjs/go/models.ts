@@ -259,6 +259,8 @@ export namespace skillmgr {
 	    path: string;
 	    alias?: string;
 	    enabled: boolean;
+	    isGitRepo: boolean;
+	    gitRoot?: string;
 	    skillCount: number;
 	    lastScannedAt?: string;
 	    errorCount: number;
@@ -274,6 +276,8 @@ export namespace skillmgr {
 	        this.path = source["path"];
 	        this.alias = source["alias"];
 	        this.enabled = source["enabled"];
+	        this.isGitRepo = source["isGitRepo"];
+	        this.gitRoot = source["gitRoot"];
 	        this.skillCount = source["skillCount"];
 	        this.lastScannedAt = source["lastScannedAt"];
 	        this.errorCount = source["errorCount"];
@@ -296,6 +300,38 @@ export namespace skillmgr {
 	        this.sources = this.convertValues(source["sources"], SkillSource);
 	        this.skills = this.convertValues(source["skills"], Skill);
 	        this.summary = this.convertValues(source["summary"], Summary);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class PullSourceResult {
+	    inventory: Inventory;
+	    message: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PullSourceResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.inventory = this.convertValues(source["inventory"], Inventory);
+	        this.message = source["message"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

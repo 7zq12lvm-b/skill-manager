@@ -4,6 +4,7 @@ import {
   Check,
   ChevronRight,
   Circle,
+  CloudDownload,
   ExternalLink,
   Folder,
   FolderPlus,
@@ -19,6 +20,7 @@ import { EventsOn } from "../wailsjs/runtime/runtime";
 import { skillmgr } from "../wailsjs/go/models";
 import { cn } from "./lib/utils";
 import { useSkillStore } from "./store/useSkillStore";
+import logoUniversal from "./assets/images/logo-universal.png";
 import "./App.css";
 
 const statusLabels: Record<string, string> = {
@@ -32,13 +34,13 @@ const statusLabels: Record<string, string> = {
 };
 
 const statusClass: Record<string, string> = {
-  synced: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  disabled: "border-slate-200 bg-slate-50 text-slate-600",
-  conflict: "border-amber-200 bg-amber-50 text-amber-700",
-  invalid: "border-rose-200 bg-rose-50 text-rose-700",
-  error: "border-rose-200 bg-rose-50 text-rose-700",
-  missing: "border-slate-200 bg-slate-50 text-slate-600",
-  syncing: "border-blue-200 bg-blue-50 text-blue-700",
+  synced: "status-pill--synced",
+  disabled: "status-pill--disabled",
+  conflict: "status-pill--conflict",
+  invalid: "status-pill--invalid",
+  error: "status-pill--invalid",
+  missing: "status-pill--missing",
+  syncing: "status-pill--syncing",
 };
 
 const SOURCE_WIDTH_KEY = "skill-manager:source-panel-width";
@@ -78,6 +80,7 @@ function App() {
     query,
     loading,
     error,
+    pullResults,
     setInventory,
     load,
     rescan,
@@ -86,6 +89,7 @@ function App() {
     browseForTarget,
     removeSource,
     renameSource,
+    pullSource,
     enableSkill,
     disableSkill,
     resolveConflict,
@@ -227,13 +231,26 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen min-w-0 flex-col overflow-hidden bg-background">
-      <header className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-4 py-3 sm:px-5">
+    <div className="app-shell flex h-screen min-w-0 flex-col overflow-hidden bg-background">
+      <header className="app-topbar flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <div className="min-w-0">
-            <h1 className="text-lg font-semibold tracking-normal">AI Agent Skill Manager</h1>
-            <p className="max-w-[calc(100vw-2rem)] truncate text-xs text-muted-foreground sm:max-w-[520px]">
-              Targets: {targetDirsLabel(inventory?.config?.targetDirs)}
+          <div className="brand-lockup">
+            <img className="brand-mark" src={logoUniversal} alt="" />
+            <div className="min-w-0">
+              <h1 className="brand-title">AI Agent Skill Manager</h1>
+              <p className="brand-subtitle max-w-[calc(100vw-2rem)] truncate sm:max-w-[520px]">
+                Linked to {targetDirsLabel(inventory?.config?.targetDirs)}
+              </p>
+            </div>
+          </div>
+          <div className="sync-route" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="hidden min-w-0 text-xs text-muted-foreground lg:block">
+            <p className="route-caption">
+              Sources scan into a managed target. Conflicts stay visible until you choose the active skill.
             </p>
           </div>
           {inventory && <SummaryBar summary={inventory.summary} />}
@@ -262,12 +279,12 @@ function App() {
       )}
 
       <main
-        className="grid min-h-0 flex-1 overflow-hidden"
+        className="workbench-grid grid min-h-0 flex-1 overflow-hidden"
         style={{
           gridTemplateColumns: workbenchGridColumns,
         }}
       >
-        <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
+        <aside className="workbench-panel workbench-panel--sources flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
           <PanelHeader title="Skill Sources">
             <IconButton title="Add source" onClick={() => setAddSourceOpen(true)}>
               <FolderPlus className="h-4 w-4" />
@@ -280,8 +297,8 @@ function App() {
                 role="button"
                 tabIndex={0}
                 className={cn(
-                  "w-full cursor-pointer rounded-md border p-3 text-left transition hover:bg-slate-50",
-                  selectedSourceId === source.id ? "border-blue-300 bg-blue-50" : "border-border bg-white",
+                  "source-card w-full cursor-pointer rounded-md border p-3 text-left transition hover:bg-slate-50",
+                  selectedSourceId === source.id && "source-card--selected border-blue-300 bg-blue-50",
                 )}
                 onClick={() => setSelectedSourceId(source.id)}
                 onKeyDown={(event) => {
@@ -313,16 +330,30 @@ function App() {
                   <SmallAction title="Alias" onClick={(event) => action(event, () => setSourceToEdit(source))}>
                     <SlidersHorizontal className="h-3.5 w-3.5" />
                   </SmallAction>
+                  {source.isGitRepo && (
+                    <SmallAction
+                      title={`Pull latest${source.gitRoot ? ` from ${source.gitRoot}` : ""}`}
+                      disabled={loading}
+                      onClick={(event) => action(event, () => pullSource(source.id))}
+                    >
+                      <CloudDownload className={cn("h-3.5 w-3.5", loading && "animate-pulse")} />
+                    </SmallAction>
+                  )}
                   <SmallAction title="Remove" onClick={(event) => action(event, () => setSourceToRemove(source))}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </SmallAction>
                 </div>
+                {pullResults[source.id] && (
+                  <div className="mt-2 truncate rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-700">
+                    {pullResults[source.id]}
+                  </div>
+                )}
               </div>
             ))}
             <button
               className={cn(
-                "w-full rounded-md border p-3 text-left text-sm",
-                selectedSourceId === "all" ? "border-blue-300 bg-blue-50" : "border-dashed border-border bg-white",
+                "source-card source-card--all w-full rounded-md border p-3 text-left text-sm",
+                selectedSourceId === "all" && "source-card--selected border-blue-300 bg-blue-50",
               )}
               onClick={() => setSelectedSourceId("all")}
             >
@@ -333,20 +364,20 @@ function App() {
 
         <ResizeHandle label="Resize Skill Sources" onPointerDown={(event) => startColumnResize("source", event)} />
 
-        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-slate-50">
+        <section className="workbench-panel workbench-panel--skills flex min-h-0 min-w-0 flex-col overflow-hidden bg-slate-50">
           <PanelHeader title="Skills">
             <Button variant="outline" onClick={rescan} disabled={loading}>
               <RefreshCcw className={cn("h-4 w-4", loading && "animate-spin")} />
               Rescan
             </Button>
           </PanelHeader>
-          <div className="shrink-0 flex flex-wrap gap-2 border-b border-border bg-white p-3">
+          <div className="filter-bar shrink-0 flex flex-wrap gap-2 border-b border-border bg-white p-3">
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search skill..."
+                placeholder="Search skills"
                 className="h-9 w-full rounded-md border border-input bg-white pl-8 pr-3 text-sm"
               />
             </div>
@@ -355,7 +386,7 @@ function App() {
               onChange={(event) => setSelectedSourceId(event.target.value)}
               className="h-9 min-w-[150px] flex-1 rounded-md border border-input bg-white px-2 text-sm sm:flex-none"
             >
-              <option value="all">All Sources</option>
+              <option value="all">Any source</option>
               {(inventory?.sources ?? []).map((source) => (
                 <option key={source.id} value={source.id}>
                   {source.alias || basename(source.path)}
@@ -367,7 +398,7 @@ function App() {
               onChange={(event) => setStatusFilter(event.target.value)}
               className="h-9 min-w-[130px] flex-1 rounded-md border border-input bg-white px-2 text-sm sm:flex-none"
             >
-              <option value="all">All Status</option>
+              <option value="all">Any status</option>
               {Object.entries(statusLabels).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
@@ -396,8 +427,8 @@ function App() {
                   <tr
                     key={skill.id}
                     className={cn(
-                      "cursor-pointer border-b border-border bg-white hover:bg-blue-50/50",
-                      selectedSkill?.id === skill.id && "bg-blue-50",
+                      "skill-row cursor-pointer border-b border-border bg-white hover:bg-blue-50/50",
+                      selectedSkill?.id === skill.id && "skill-row--selected bg-blue-50",
                     )}
                     onClick={() => selectSkill(skill.id)}
                   >
@@ -411,7 +442,7 @@ function App() {
                     <td className="min-w-0 overflow-hidden px-3 py-2">
                       <div className="truncate font-medium">{skill.name}</div>
                       <div className="truncate text-xs text-muted-foreground">
-                        {skill.description || "No description"}
+                        {skill.description || "No summary yet"}
                       </div>
                     </td>
                     <td className="min-w-0 overflow-hidden px-3 py-2 text-muted-foreground">
@@ -428,14 +459,16 @@ function App() {
               </tbody>
             </table>
             {filteredSkills.length === 0 && (
-              <div className="p-8 text-center text-sm text-muted-foreground">No skills match the current filters.</div>
+              <div className="empty-state p-8 text-center text-sm text-muted-foreground">
+                No skills match these filters. Clear search or choose another status.
+              </div>
             )}
           </div>
         </section>
 
         <ResizeHandle label="Resize Skill Detail" onPointerDown={(event) => startColumnResize("detail", event)} />
 
-        <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
+        <aside className="workbench-panel workbench-panel--detail flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
           <PanelHeader title="Skill Detail">
             <IconButton
               title="Open skill folder in VS Code"
@@ -540,13 +573,13 @@ function SummaryBar({ summary }: { summary: skillmgr.Summary }) {
 
 function SummaryItem({ label, value, tone = "slate" }: { label: string; value: number; tone?: string }) {
   const tones: Record<string, string> = {
-    slate: "bg-slate-100 text-slate-700",
-    emerald: "bg-emerald-50 text-emerald-700",
-    amber: "bg-amber-50 text-amber-700",
-    rose: "bg-rose-50 text-rose-700",
+    slate: "summary-item--slate",
+    emerald: "summary-item--emerald",
+    amber: "summary-item--amber",
+    rose: "summary-item--rose",
   };
   return (
-    <span className={cn("rounded-md px-2 py-1 font-medium", tones[tone])}>
+    <span className={cn("summary-item rounded-md px-2 py-1 font-medium", tones[tone])}>
       {value} {label}
     </span>
   );
@@ -566,9 +599,9 @@ function ResizeHandle({
       tabIndex={0}
       title={label}
       onPointerDown={onPointerDown}
-      className="group flex min-h-0 cursor-col-resize items-stretch justify-center bg-white"
+      className="resize-handle group flex min-h-0 cursor-col-resize items-stretch justify-center bg-white"
     >
-      <div className="w-px bg-border transition group-hover:w-1 group-hover:bg-blue-400" />
+      <div className="resize-handle-line w-px bg-border transition group-hover:w-1 group-hover:bg-blue-400" />
     </div>
   );
 }
@@ -581,7 +614,7 @@ function SkillHeaderCell({
   onResize?: (event: React.PointerEvent) => void;
 }) {
   return (
-    <th className="sticky top-0 z-20 bg-slate-100 px-3 py-2">
+    <th className="skill-header-cell sticky top-0 z-20 bg-slate-100 px-3 py-2">
       <div className="relative min-w-0">
         <span className="block truncate">{label}</span>
         {onResize && (
@@ -590,7 +623,7 @@ function SkillHeaderCell({
             aria-label={`Resize ${label} column`}
             title="Resize column"
             onPointerDown={onResize}
-            className="absolute -right-3 top-1/2 h-6 w-2 -translate-y-1/2 cursor-col-resize rounded hover:bg-blue-400/50"
+            className="column-resize absolute -right-3 top-1/2 h-6 w-2 -translate-y-1/2 cursor-col-resize rounded hover:bg-blue-400/50"
           />
         )}
       </div>
@@ -618,8 +651,8 @@ function SkillSwitch({
         checked ? onDisable() : onEnable();
       }}
       className={cn(
-        "relative h-5 w-9 rounded-full border transition disabled:cursor-not-allowed disabled:opacity-50",
-        checked ? "border-emerald-500 bg-emerald-500" : "border-slate-300 bg-slate-200",
+        "skill-switch relative h-5 w-9 rounded-full border transition disabled:cursor-not-allowed disabled:opacity-50",
+        checked ? "skill-switch--on border-emerald-500 bg-emerald-500" : "skill-switch--off border-slate-300 bg-slate-200",
       )}
     >
       <span
@@ -665,7 +698,7 @@ function SkillDetail({
       <DetailSection title="Paths">
         <PathRow label="Source folder" path={skill.sourcePath} />
         {(skill.targetStates?.length ? skill.targetStates : []).map((target) => (
-          <div key={target.targetPath} className="min-w-0 space-y-2 border-l border-border pl-3">
+          <div key={target.targetPath} className="target-route min-w-0 space-y-2 border-l border-border pl-3">
             <PathRow label="Link path" path={target.symlinkPath} />
             <ReadOnlyRow label="Target folder" value={target.targetDir} />
             {target.symlinkTarget && <ReadOnlyRow label="Currently points to" value={target.symlinkTarget} />}
@@ -709,7 +742,7 @@ function SkillDetail({
       <DetailSection title="Files">
         <div className="flex min-w-0 flex-wrap gap-2">
           {(skill.files ?? []).map((file) => (
-            <span key={file} className="max-w-full break-all rounded-md border border-border bg-slate-50 px-2 py-1 text-xs">
+            <span key={file} className="file-chip max-w-full break-all rounded-md border border-border bg-slate-50 px-2 py-1 text-xs">
               {file}
             </span>
           ))}
@@ -718,7 +751,7 @@ function SkillDetail({
 
       {skill.preview && (
         <DetailSection title={`Preview: ${skill.previewFile}`}>
-          <pre className="max-h-72 max-w-full overflow-auto rounded-md border border-border bg-slate-950 p-3 text-xs leading-5 text-slate-100">
+          <pre className="code-preview max-h-72 max-w-full overflow-auto rounded-md border border-border bg-slate-950 p-3 text-xs leading-5 text-slate-100">
             {skill.preview}
           </pre>
         </DetailSection>
@@ -736,7 +769,7 @@ function ManifestSection({ manifest }: { manifest?: skillmgr.SkillManifest }) {
   const metadataEntries = Object.entries(manifest.metadata ?? {});
   return (
     <DetailSection title="Manifest">
-      <div className="min-w-0 space-y-2 rounded-md border border-border bg-slate-50 p-3">
+      <div className="manifest-card min-w-0 space-y-2 rounded-md border border-border bg-slate-50 p-3">
         <ManifestRow label="name" value={manifest.name} />
         <ManifestRow label="description" value={manifest.description} />
         <ManifestRow label="license" value={manifest.license} />
@@ -844,18 +877,18 @@ function EnvEditor({
   }
 
   return (
-    <DetailSection title="Preview: .env">
-      <div className="min-w-0 rounded-md border border-border bg-white">
+    <DetailSection title=".env overrides">
+      <div className="env-editor min-w-0 rounded-md border border-border bg-white">
         <textarea
           value={content}
           onChange={(event) => setContent(event.target.value)}
           spellCheck={false}
           placeholder="KEY=value"
-          className="min-h-40 min-w-0 w-full resize-y border-0 bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100 outline-none placeholder:text-slate-500"
+          className="code-preview min-h-40 min-w-0 w-full resize-y border-0 bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100 outline-none placeholder:text-slate-500"
         />
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-slate-50 px-3 py-2">
           <span className="text-xs text-muted-foreground">
-            {loading ? "Loading .env..." : dirty ? "Unsaved changes" : ".env saved"}
+            {loading ? "Reading .env..." : dirty ? "Unsaved changes" : ".env saved"}
           </span>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={reload} disabled={loading || saving}>
@@ -963,7 +996,7 @@ function SettingsModal({
         <div className="block text-sm font-medium">
           Skill detection
           <div className="mt-2 rounded-md border border-border bg-slate-50 p-3 text-sm text-muted-foreground">
-            A folder is shown as a skill only when it contains `SKILL.md`.
+            A folder appears here when it contains `SKILL.md`.
           </div>
         </div>
         <div className="flex justify-end gap-2">
@@ -1074,7 +1107,7 @@ function StatusPill({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium",
+        "status-pill inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium",
         statusClass[status] ?? statusClass.disabled,
       )}
     >
@@ -1088,7 +1121,7 @@ function StatusPill({ status }: { status: string }) {
 
 function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="mb-5 min-w-0">
+    <section className="detail-section mb-5 min-w-0">
       <h3 className="mb-2 truncate text-xs font-semibold uppercase tracking-normal text-muted-foreground">{title}</h3>
       {children}
     </section>
@@ -1097,7 +1130,7 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
 
 function PathRow({ label, path }: { label: string; path: string }) {
   return (
-    <div className="mb-2 min-w-0 rounded-md border border-border p-2">
+    <div className="path-row mb-2 min-w-0 rounded-md border border-border p-2">
       <div className="mb-1 text-xs text-muted-foreground">{label}</div>
       <div className="break-all font-mono text-xs text-slate-700">{path}</div>
     </div>
@@ -1106,7 +1139,7 @@ function PathRow({ label, path }: { label: string; path: string }) {
 
 function ReadOnlyRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="mb-2 min-w-0 rounded-md border border-border p-2">
+    <div className="path-row mb-2 min-w-0 rounded-md border border-border p-2">
       <div className="mb-1 text-xs text-muted-foreground">{label}</div>
       <div className="break-all font-mono text-xs text-slate-700">{value}</div>
     </div>
@@ -1115,13 +1148,13 @@ function ReadOnlyRow({ label, value }: { label: string; value: string }) {
 
 function IssueLine({ value }: { value: string }) {
   return (
-    <div className="min-w-0 break-words rounded-md border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700">{value}</div>
+    <div className="issue-line min-w-0 break-words rounded-md border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700">{value}</div>
   );
 }
 
 function PanelHeader({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
-    <div className="flex h-14 min-w-0 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
+    <div className="panel-header flex h-14 min-w-0 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
       <h2 className="min-w-0 truncate text-sm font-semibold">{title}</h2>
       {children && <div className="shrink-0">{children}</div>}
     </div>
@@ -1137,10 +1170,10 @@ function Button({
   return (
     <button
       className={cn(
-        "inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition disabled:pointer-events-none disabled:opacity-50",
-        variant === "default" && "bg-primary text-primary-foreground hover:bg-blue-600",
-        variant === "outline" && "border border-border bg-white text-foreground hover:bg-slate-50",
-        variant === "ghost" && "hover:bg-slate-100",
+        "ui-button inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition disabled:pointer-events-none disabled:opacity-50",
+        variant === "default" && "ui-button--default bg-primary text-primary-foreground hover:bg-blue-600",
+        variant === "outline" && "ui-button--outline border border-border bg-white text-foreground hover:bg-slate-50",
+        variant === "ghost" && "ui-button--ghost hover:bg-slate-100",
         className,
       )}
       {...props}
@@ -1154,7 +1187,7 @@ function IconButton({ className, ...props }: React.ButtonHTMLAttributes<HTMLButt
   return (
     <button
       className={cn(
-        "inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-white text-slate-700 transition hover:bg-slate-50 disabled:opacity-50",
+        "icon-button inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-white text-slate-700 transition hover:bg-slate-50 disabled:opacity-50",
         className,
       )}
       {...props}
@@ -1162,12 +1195,14 @@ function IconButton({ className, ...props }: React.ButtonHTMLAttributes<HTMLButt
   );
 }
 
-function SmallAction({ title, children, onClick }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+function SmallAction({ className, children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
-      title={title}
-      onClick={onClick}
-      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-white hover:bg-slate-50"
+      className={cn(
+        "small-action inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-white hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-50",
+        className,
+      )}
+      {...props}
     >
       {children}
     </button>
@@ -1197,9 +1232,9 @@ function Modal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
-      <div className="w-full max-w-xl rounded-lg border border-border bg-white shadow-xl">
-        <div className="flex h-14 items-center justify-between border-b border-border px-5">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
+      <div className="modal-surface w-full max-w-xl rounded-lg border border-border bg-white shadow-xl">
+        <div className="panel-header flex h-14 items-center justify-between border-b border-border px-5">
           <h2 className="text-base font-semibold">{title}</h2>
           <IconButton title="Close" onClick={onClose}>
             <X className="h-4 w-4" />
