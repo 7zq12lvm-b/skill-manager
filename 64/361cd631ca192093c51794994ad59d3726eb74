@@ -1,0 +1,38 @@
+build.sh
+  s_66c39715bd3885::t_f26767fb0fcfe0 18-19
+frontend/src/App.css
+  s_66c39715bd3885::t_6c6fcc756afa19 172-173,351,371-373
+  s_5b8e5c1a732b3f::t_26d554fcd65b26 309-315
+frontend/src/App.tsx
+  s_66c39715bd3885::t_678f188e2c1811 233-250,256,278,281,285,293-294,308,335,337,346,349,357,361,383-387,392,398,400-402,405,410-411,424-425,447-466,523-527,555-556
+  s_66c39715bd3885::t_b6804a81d03ab3 474,480-487
+  s_66c39715bd3885::t_bc0cc4ea242d6f 689,691,1023-1025,1037-1039
+  s_5b8e5c1a732b3f::t_8c57cb06cfbdb2 824
+  s_66c39715bd3885::t_d7e086e19c705d 1268-1274,1277,1282-1283,1289-1296,1299,1304-1305,1341,1374-1395
+  s_66c39715bd3885::t_2acaf8c9f79ef1 650,654,663,674,678,714-716,953-955,959-960,963-964,971,1031,1060,1069,1121-1122,1137,1180,1196-1198
+  s_66c39715bd3885::t_207b58ec29e77a 560,805,1049,1126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.11",
+  "base_commit_sha": "64361cd631ca192093c51794994ad59d3726eb74",
+  "prompts": {},
+  "sessions": {
+    "s_5b8e5c1a732b3f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef850-4acb-7b30-a438-ba9180309a68",
+        "model": "gpt-5.5"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    },
+    "s_66c39715bd3885": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef85b-83a0-7462-8997-6eb923587cae",
+        "model": "gpt-5.5"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
