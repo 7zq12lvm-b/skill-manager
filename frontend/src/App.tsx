@@ -739,6 +739,22 @@ function isActiveSkill(skill: skillmgr.Skill) {
   return skill.isActive || skill.status === "synced" || skill.status === "syncing";
 }
 
+function linkedSkillPaths(skill: skillmgr.Skill) {
+  const linkedPaths = (skill.targetStates ?? [])
+    .filter((target) => target.isActive && target.symlinkPath)
+    .map((target) => target.symlinkPath);
+
+  if (linkedPaths.length > 0) {
+    return linkedPaths;
+  }
+
+  if (isActiveSkill(skill) && skill.symlinkPath) {
+    return [skill.symlinkPath];
+  }
+
+  return [];
+}
+
 function SkillDetail({
   skill,
   onResolve,
@@ -753,6 +769,7 @@ function SkillDetail({
   if (!skill) {
     return <div className="p-5 text-sm text-muted-foreground">No skill selected.</div>;
   }
+  const activeLinkedPaths = linkedSkillPaths(skill);
   return (
     <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-5">
       <div className="mb-5 flex min-w-0 flex-wrap items-start justify-between gap-3">
@@ -766,16 +783,8 @@ function SkillDetail({
       </div>
 
       <DetailSection title="Paths">
-        <PathRow label="Source folder" path={skill.sourcePath} />
-        {(skill.targetStates?.length ? skill.targetStates : []).map((target) => (
-          <div key={target.targetPath} className="target-route min-w-0 space-y-2 border-l border-border pl-3">
-            <PathRow label="Link path" path={target.symlinkPath} />
-            <ReadOnlyRow label="Target folder" value={target.targetDir} />
-            {target.symlinkTarget && <ReadOnlyRow label="Currently points to" value={target.symlinkTarget} />}
-            {target.error && <IssueLine value={target.error} />}
-          </div>
-        ))}
-        {!skill.targetStates?.length && <PathRow label="Link path" path={skill.symlinkPath ?? ""} />}
+        <PathRow label="source skill folder" path={skill.sourcePath} />
+        {activeLinkedPaths.length > 0 && <PathRow label="currently linked to" path={activeLinkedPaths} />}
       </DetailSection>
 
       <ManifestSection manifest={skill.manifest} />
@@ -1210,20 +1219,18 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
   );
 }
 
-function PathRow({ label, path }: { label: string; path: string }) {
+function PathRow({ label, path }: { label: string; path: string | string[] }) {
+  const paths = Array.isArray(path) ? path : [path];
   return (
     <div className="path-row mb-2 min-w-0 rounded-md border border-border p-2">
       <div className="mb-1 text-xs text-muted-foreground">{label}</div>
-      <div className="break-all font-mono text-xs text-slate-700">{path}</div>
-    </div>
-  );
-}
-
-function ReadOnlyRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="path-row mb-2 min-w-0 rounded-md border border-border p-2">
-      <div className="mb-1 text-xs text-muted-foreground">{label}</div>
-      <div className="break-all font-mono text-xs text-slate-700">{value}</div>
+      <div className="space-y-1">
+        {paths.map((item) => (
+          <div key={item} className="break-all font-mono text-xs text-slate-700">
+            {item}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

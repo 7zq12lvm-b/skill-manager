@@ -274,10 +274,6 @@
   color: color-mix(in srgb, var(--sm-link-dark), var(--sm-ink) 34%);
 }
 
-.target-route {
-  border-left-color: color-mix(in srgb, var(--sm-link), white 42%) !important;
-}
-
 .path-row,
 .manifest-card,
 .env-editor {
