@@ -1,0 +1,21 @@
+frontend/src/App.tsx
+  s_66c39715bd3885::t_dc4f5c0c659618 742-757
+  s_66c39715bd3885::t_08d2761ae6155b 772,787
+  s_66c39715bd3885::t_29aba9d0ff40b1 786,1222-1223,1227-1233
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.13",
+  "base_commit_sha": "c9f83efad319df0d52becbacc97ffdc21a08dca0",
+  "prompts": {},
+  "sessions": {
+    "s_66c39715bd3885": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef85b-83a0-7462-8997-6eb923587cae",
+        "model": "gpt-5.5"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
