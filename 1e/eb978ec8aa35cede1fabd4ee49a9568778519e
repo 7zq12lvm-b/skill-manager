@@ -1,0 +1,38 @@
+internal/tag_store.go
+  s_66c39715bd3885::t_986bc2a3a75b2f 1-122
+frontend/src/App.css
+  s_66c39715bd3885::t_c5c3af7f17dd1e 279,299-302
+app.go
+  s_66c39715bd3885::t_b15d64efee8928 23,36-39,41-43,277-286,323,327-335
+internal/types.go
+  s_66c39715bd3885::t_8b93f5349dff21 97
+frontend/wailsjs/go/main/App.js
+  s_66c39715bd3885::t_f6ab3b7784bdbe 68-71
+frontend/src/store/useSkillStore.ts
+  s_66c39715bd3885::t_ba18716c4675b1 20,49,163-164
+frontend/wailsjs/go/main/App.d.ts
+  s_66c39715bd3885::t_f6ab3b7784bdbe 36-37
+frontend/src/App.tsx
+  s_66c39715bd3885::t_d40cecd3963624 16,100,152-153,504,548
+  s_66c39715bd3885::t_ca8fd91c0a35f7 774,780,803-804
+  s_66c39715bd3885::t_f5c389a4890886 763-768
+  s_66c39715bd3885::t_6c5c0d0ebf478c 903-1004
+frontend/wailsjs/go/models.ts
+  s_66c39715bd3885::t_f6ab3b7784bdbe 207,237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.13",
+  "base_commit_sha": "1eeb978ec8aa35cede1fabd4ee49a9568778519e",
+  "prompts": {},
+  "sessions": {
+    "s_66c39715bd3885": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef85b-83a0-7462-8997-6eb923587cae",
+        "model": "gpt-5.5"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
