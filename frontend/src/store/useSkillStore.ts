@@ -17,6 +17,7 @@ import {
   ResolveConflict,
   SaveConfig,
   SaveSkillEnvFile,
+  SaveSkillTags,
 } from "../../wailsjs/go/main/App";
 
 type StatusFilter = "all" | string;
@@ -45,6 +46,7 @@ type SkillStore = {
   saveConfig: (config: skillmgr.Config) => Promise<void>;
   readSkillEnv: (skillId: string) => Promise<string>;
   saveSkillEnv: (skillId: string, content: string) => Promise<void>;
+  saveSkillTags: (skillName: string, tags: string[]) => Promise<void>;
   openInVSCode: (path: string) => Promise<void>;
   openPath: (path: string) => Promise<void>;
   selectSkill: (skillId?: string) => void;
@@ -158,6 +160,8 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
       throw error;
     }
   },
+  saveSkillTags: async (skillName, tags) =>
+    runWithInventory(set, () => SaveSkillTags(skillName, tags)),
   openPath: async (path) => {
     try {
       await OpenPath(path);

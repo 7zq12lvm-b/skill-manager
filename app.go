@@ -20,6 +20,7 @@ import (
 type App struct {
 	ctx       context.Context
 	store     *skillmgr.ConfigStore
+	tagStore  *skillmgr.SkillTagStore
 	service   *skillmgr.Service
 	mu        sync.Mutex
 	config    skillmgr.Config
@@ -32,9 +33,14 @@ func NewApp() *App {
 	if err != nil {
 		configPath = filepath.Join(".", "config.json")
 	}
+	tagPath, err := skillmgr.DefaultSkillTagPath()
+	if err != nil {
+		tagPath = filepath.Join(".", "tags.json")
+	}
 	return &App{
-		store:   skillmgr.NewConfigStore(configPath),
-		service: skillmgr.NewService(),
+		store:    skillmgr.NewConfigStore(configPath),
+		tagStore: skillmgr.NewSkillTagStore(tagPath),
+		service:  skillmgr.NewService(),
 	}
 }
 
@@ -268,6 +274,16 @@ func (a *App) SaveSkillEnvFile(skillID string, content string) (skillmgr.Invento
 	return a.inventory, nil
 }
 
+func (a *App) SaveSkillTags(skillName string, tags []string) (skillmgr.Inventory, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.tagStore.SetSkillTags(skillName, tags); err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	a.applySkillTagsLocked()
+	return a.inventory, nil
+}
+
 func (a *App) OpenPath(path string) error {
 	if path == "" {
 		return errors.New("path is required")
@@ -304,7 +320,19 @@ func (a *App) refreshLocked(ctx context.Context) error {
 	}
 	a.config = inventory.Config
 	a.inventory = inventory
+	a.applySkillTagsLocked()
 	return nil
+}
+
+func (a *App) applySkillTagsLocked() {
+	document, err := a.tagStore.Load()
+	if err != nil {
+		fmt.Println("load skill tags:", err)
+		return
+	}
+	for index := range a.inventory.Skills {
+		a.inventory.Skills[index].Tags = append([]string(nil), document.Skills[a.inventory.Skills[index].Name]...)
+	}
 }
 
 func (a *App) persistAndRefreshLocked() error {

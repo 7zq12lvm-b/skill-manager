@@ -13,6 +13,7 @@ import {
   Search,
   Settings,
   SlidersHorizontal,
+  Tag,
   Trash2,
   X,
 } from "lucide-react";
@@ -96,6 +97,7 @@ function App() {
     saveConfig,
     readSkillEnv,
     saveSkillEnv,
+    saveSkillTags,
     openInVSCode,
     openPath,
     selectSkill,
@@ -147,7 +149,8 @@ function App() {
       const matchesQuery =
         normalizedQuery.length === 0 ||
         skill.name.toLowerCase().includes(normalizedQuery) ||
-        skill.sourcePath.toLowerCase().includes(normalizedQuery);
+        skill.sourcePath.toLowerCase().includes(normalizedQuery) ||
+        (skill.tags ?? []).some((tag) => tag.toLowerCase().includes(normalizedQuery));
       return matchesSource && matchesStatus && matchesQuery;
     });
   }, [inventory?.skills, query, selectedSourceId, statusFilter]);
@@ -498,6 +501,7 @@ function App() {
                       <div className="truncate text-xs text-muted-foreground">
                         {skill.description || "No summary yet"}
                       </div>
+                      <TagList tags={skill.tags} compact />
                     </td>
                     <td className="min-w-0 overflow-hidden px-3 py-2 text-muted-foreground">
                       <div className="truncate">{skill.sourceAlias || skill.sourceId}</div>
@@ -541,6 +545,7 @@ function App() {
             onResolve={resolveConflict}
             onReadEnv={readSkillEnv}
             onSaveEnv={saveSkillEnv}
+            onSaveTags={saveSkillTags}
           />
         </aside>
       </main>
@@ -755,16 +760,24 @@ function linkedSkillPaths(skill: skillmgr.Skill) {
   return [];
 }
 
+function cleanUiTags(tags: string[]) {
+  return Array.from(new Set(tags.map((tag) => tag.trim()).filter(Boolean))).sort((left, right) =>
+    left.localeCompare(right),
+  );
+}
+
 function SkillDetail({
   skill,
   onResolve,
   onReadEnv,
   onSaveEnv,
+  onSaveTags,
 }: {
   skill?: skillmgr.Skill;
   onResolve: (skillId: string) => void;
   onReadEnv: (skillId: string) => Promise<string>;
   onSaveEnv: (skillId: string, content: string) => Promise<void>;
+  onSaveTags: (skillName: string, tags: string[]) => Promise<void>;
 }) {
   if (!skill) {
     return <div className="p-5 text-sm text-muted-foreground">No skill selected.</div>;
@@ -785,6 +798,10 @@ function SkillDetail({
       <DetailSection title="Paths">
         <PathRow label="source skill folder" path={skill.sourcePath} />
         {activeLinkedPaths.length > 0 && <PathRow label="currently linked to" path={activeLinkedPaths} />}
+      </DetailSection>
+
+      <DetailSection title="Tags">
+        <TagEditor skill={skill} onSaveTags={onSaveTags} />
       </DetailSection>
 
       <ManifestSection manifest={skill.manifest} />
@@ -880,6 +897,108 @@ function ManifestSection({ manifest }: { manifest?: skillmgr.SkillManifest }) {
         )}
       </div>
     </DetailSection>
+  );
+}
+
+function TagEditor({
+  skill,
+  onSaveTags,
+}: {
+  skill: skillmgr.Skill;
+  onSaveTags: (skillName: string, tags: string[]) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const tags = skill.tags ?? [];
+
+  useEffect(() => {
+    setDraft("");
+  }, [skill.name]);
+
+  async function save(nextTags: string[]) {
+    setSaving(true);
+    try {
+      await onSaveTags(skill.name, cleanUiTags(nextTags));
+      setDraft("");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addDraftTag() {
+    const nextTags = cleanUiTags([...tags, ...draft.split(",")]);
+    if (nextTags.length === tags.length && nextTags.every((tag, index) => tag === tags[index])) {
+      setDraft("");
+      return;
+    }
+    await save(nextTags);
+  }
+
+  return (
+    <div className="tag-editor min-w-0 rounded-md border border-border bg-white p-3">
+      <TagList tags={tags} onRemove={(tag) => save(tags.filter((item) => item !== tag))} disabled={saving} />
+      <div className="mt-3 flex min-w-0 gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Tag aria-hidden="true" className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <input
+            aria-label={`Add tag to ${skill.name}`}
+            autoComplete="off"
+            name={`${skill.name}-tag`}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void addDraftTag();
+              }
+            }}
+            placeholder="Add tag…"
+            className="h-9 w-full rounded-md border border-input bg-white pl-8 pr-3 text-sm"
+          />
+        </div>
+        <Button variant="outline" onClick={() => void addDraftTag()} disabled={saving || !draft.trim()}>
+          {saving ? "Saving…" : "Add"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function TagList({
+  tags,
+  compact = false,
+  disabled = false,
+  onRemove,
+}: {
+  tags?: string[];
+  compact?: boolean;
+  disabled?: boolean;
+  onRemove?: (tag: string) => void;
+}) {
+  const visibleTags = tags ?? [];
+  if (visibleTags.length === 0) {
+    if (compact) return null;
+    return <div className="text-xs text-muted-foreground">No tags yet.</div>;
+  }
+  return (
+    <div className={cn("tag-list flex min-w-0 flex-wrap gap-1.5", compact && "mt-1")}>
+      {visibleTags.map((tag) => (
+        <span key={tag} className="tag-chip inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-0.5 text-xs">
+          <span className="truncate">{tag}</span>
+          {onRemove && (
+            <button
+              aria-label={`Remove ${tag} tag`}
+              className="rounded p-0.5 hover:bg-rose-100 disabled:pointer-events-none disabled:opacity-50"
+              disabled={disabled}
+              onClick={() => onRemove(tag)}
+              type="button"
+            >
+              <X aria-hidden="true" className="h-3 w-3" />
+            </button>
+          )}
+        </span>
+      ))}
+    </div>
   );
 }
 

@@ -94,6 +94,7 @@ type Skill struct {
 	UpdatedAt        string           `json:"updatedAt,omitempty"`
 	LastScannedAt    string           `json:"lastScannedAt,omitempty"`
 	ConflictSources  []ConflictSource `json:"conflictSources,omitempty"`
+	Tags             []string         `json:"tags,omitempty"`
 	Error            string           `json:"error,omitempty"`
 }
 

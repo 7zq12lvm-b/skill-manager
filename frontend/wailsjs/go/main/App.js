@@ -65,3 +65,7 @@ export function SaveConfig(arg1) {
 export function SaveSkillEnvFile(arg1, arg2) {
   return window['go']['main']['App']['SaveSkillEnvFile'](arg1, arg2);
 }
+
+export function SaveSkillTags(arg1, arg2) {
+  return window['go']['main']['App']['SaveSkillTags'](arg1, arg2);
+}

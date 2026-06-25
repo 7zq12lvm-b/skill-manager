@@ -33,3 +33,5 @@ export function ResolveConflict(arg1:string):Promise<skillmgr.Inventory>;
 export function SaveConfig(arg1:skillmgr.Config):Promise<skillmgr.Inventory>;
 
 export function SaveSkillEnvFile(arg1:string,arg2:string):Promise<skillmgr.Inventory>;
+
+export function SaveSkillTags(arg1:string,arg2:Array<string>):Promise<skillmgr.Inventory>;

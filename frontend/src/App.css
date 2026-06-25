@@ -276,6 +276,7 @@
 
 .path-row,
 .manifest-card,
+.tag-editor,
 .env-editor {
   border-color: var(--sm-line) !important;
   background: color-mix(in srgb, var(--sm-panel), var(--sm-paper) 30%) !important;
@@ -293,6 +294,12 @@
 .file-chip {
   border-color: color-mix(in srgb, var(--sm-line), var(--sm-link) 12%) !important;
   background: #f4f7f5 !important;
+}
+
+.tag-chip {
+  border-color: color-mix(in srgb, var(--sm-link), white 58%) !important;
+  background: var(--sm-link-soft) !important;
+  color: var(--sm-link-dark);
 }
 
 .code-preview {

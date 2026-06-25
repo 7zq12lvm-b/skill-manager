@@ -204,6 +204,7 @@ export namespace skillmgr {
 	    updatedAt?: string;
 	    lastScannedAt?: string;
 	    conflictSources?: ConflictSource[];
+	    tags?: string[];
 	    error?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -233,6 +234,7 @@ export namespace skillmgr {
 	        this.updatedAt = source["updatedAt"];
 	        this.lastScannedAt = source["lastScannedAt"];
 	        this.conflictSources = this.convertValues(source["conflictSources"], ConflictSource);
+	        this.tags = source["tags"];
 	        this.error = source["error"];
 	    }
 	
