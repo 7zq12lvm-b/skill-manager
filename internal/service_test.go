@@ -558,6 +558,41 @@ func TestScanRepositoryDiscoversNestedSkillFiles(t *testing.T) {
 	assertSkillStatus(t, inventory, "summarize-pdf", StatusDisabled)
 }
 
+func TestScanRepositoryRootSkillUsesRepositoryFolderAsTargetName(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "serenity-skill")
+	mustWrite(t, filepath.Join(repo, "SKILL.md"), "# serenity\n")
+	bin := filepath.Join(root, "bin")
+	mustMkdir(t, bin)
+	mustWriteMode(t, filepath.Join(bin, "git"), "#!/bin/sh\ncase \"$3 $4\" in\n\"rev-parse --show-toplevel\") printf '%s\\n' \"$TEST_GIT_ROOT\";;\n\"branch --show-current\") printf 'main\\n';;\n*) exit 1;;\nesac\n", 0o755)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TEST_GIT_ROOT", repo)
+
+	inventory, err := NewService().Scan(context.Background(), Config{
+		TargetDirs: []string{filepath.Join(root, "target")},
+		Repositories: []RepositoryConfig{{
+			ID:      "example.com/me/serenity-skill",
+			RepoID:  "example.com/me/serenity-skill",
+			Path:    repo,
+			Enabled: true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory.Skills) != 1 {
+		t.Fatalf("expected one root skill, got %d", len(inventory.Skills))
+	}
+	skill := inventory.Skills[0]
+	if skill.Name != "serenity-skill" || skill.TargetName != "serenity-skill" {
+		t.Fatalf("expected root skill target name serenity-skill, got name=%q targetName=%q", skill.Name, skill.TargetName)
+	}
+	if skill.TargetPath != filepath.Join(root, "target", "serenity-skill") {
+		t.Fatalf("expected target path under skill name, got %s", skill.TargetPath)
+	}
+	assertSkillStatus(t, inventory, "serenity-skill", StatusDisabled)
+}
+
 func TestScanWithSyncShowsMissingSource(t *testing.T) {
 	root := t.TempDir()
 	enabled := true

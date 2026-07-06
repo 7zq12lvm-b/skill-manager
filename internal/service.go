@@ -175,7 +175,7 @@ func (s *Service) scanRepository(ctx context.Context, config RepositoryConfig, a
 			continue
 		}
 		repoSubpath = cleanRepoSubpath(repoSubpath)
-		targetName := filepath.Base(repoSubpath)
+		targetName := targetNameForRepositorySkill(config, repoSubpath)
 		id := syncSkillID(config.RepoID, repoSubpath)
 		if id == "" {
 			id = skillID(config.ID, repoSubpath)
@@ -573,6 +573,26 @@ func targetNameForSkill(skill Skill) string {
 		return skill.TargetName
 	}
 	return skill.Name
+}
+
+func targetNameForRepositorySkill(repository RepositoryConfig, repoSubpath string) string {
+	repoSubpath = cleanRepoSubpath(repoSubpath)
+	if repoSubpath != "." {
+		return filepath.Base(filepath.FromSlash(repoSubpath))
+	}
+	if alias := strings.TrimSpace(repository.Alias); alias != "" {
+		return alias
+	}
+	if repository.Path != "" {
+		base := filepath.Base(filepath.Clean(repository.Path))
+		if base != "" && base != "." && base != string(filepath.Separator) {
+			return base
+		}
+	}
+	if repository.RepoID != "" {
+		return filepath.Base(filepath.FromSlash(repository.RepoID))
+	}
+	return "skill"
 }
 
 func inspectTargets(name string, sourcePath string, targetDirs []string) []SkillTarget {
