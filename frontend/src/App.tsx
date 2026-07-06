@@ -89,6 +89,7 @@ function App() {
     statusFilter,
     query,
     loading,
+    loadingLabel,
     error,
     pullResults,
     setInventory,
@@ -334,6 +335,8 @@ function App() {
           </button>
         </div>
       )}
+
+      {loading && <LoadingOverlay label={loadingLabel || "Working..."} />}
 
       <main
         className="workbench-grid grid min-h-0 flex-1 overflow-hidden"
@@ -582,7 +585,7 @@ function App() {
                     <td className="overflow-hidden px-2 py-2">
                       <SkillSwitch
                         skill={skill}
-                        onEnable={() => enableSkill(skill.id)}
+                        onEnable={() => (skill.status === "conflict" ? resolveConflict(skill.id) : enableSkill(skill.id))}
                         onDisable={() => disableSkill(skill.id)}
                       />
                     </td>
@@ -745,6 +748,25 @@ function SummaryBar({ summary }: { summary: skillmgr.Summary }) {
   );
 }
 
+function LoadingOverlay({ label }: { label: string }) {
+  return (
+    <div className="loading-overlay fixed inset-0 z-[70] flex items-center justify-center bg-white/72 px-6 backdrop-blur-sm">
+      <div className="loading-panel w-full max-w-sm rounded-md border border-border bg-white p-4 shadow-xl">
+        <div className="flex items-center gap-3">
+          <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin text-[var(--sm-link)]" />
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium text-slate-800">{label}</div>
+            <div className="mt-1 text-xs text-muted-foreground">This may take a moment for large repositories.</div>
+          </div>
+        </div>
+        <div className="loading-progress mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100">
+          <div className="loading-progress-bar h-full rounded-full" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SummaryItem({ label, value, tone = "slate" }: { label: string; value: number; tone?: string }) {
   const tones: Record<string, string> = {
     slate: "summary-item--slate",
@@ -822,9 +844,7 @@ function SkillSwitch({
   onDisable: () => void;
 }) {
   const checked = isActiveSkill(skill);
-  const disabled =
-    ["invalid", "error", "missing", "missing-source", "missing-path"].includes(skill.status) ||
-    (skill.status === "conflict" && !checked);
+  const disabled = ["invalid", "error", "missing", "missing-source", "missing-path"].includes(skill.status);
   return (
     <button
       aria-label={`${checked ? "Disable" : "Enable"} ${skill.name}`}
@@ -893,7 +913,7 @@ function SkillDetail({
   syncConfigured: boolean;
   onEnable: (skillId: string) => Promise<void>;
   onEnableLocalOnly: (skillId: string) => Promise<void>;
-  onResolve: (skillId: string) => void;
+  onResolve: (skillId: string) => Promise<void>;
   onReadEnv: (skillId: string) => Promise<string>;
   onSaveEnv: (skillId: string, content: string) => Promise<void>;
   onSaveTags: (skillId: string, tags: string[]) => Promise<void>;
@@ -970,13 +990,9 @@ function SkillDetail({
                 <IssueLine value={skill.symlinkTarget ? `Target currently points to ${skill.symlinkTarget}` : "Target name is already occupied."} />
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    if (window.confirm(`Replace the existing target for ${skill.name}?`)) {
-                      onResolve(skill.id);
-                    }
-                  }}
+                  onClick={() => void onResolve(skill.id)}
                 >
-                  Replace With Synced Skill
+                  Replace Existing Target
                 </Button>
               </div>
             )}

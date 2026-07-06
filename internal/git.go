@@ -38,15 +38,11 @@ func pullGitRepository(ctx context.Context, path string) (string, error) {
 	if _, ok := gitRepositoryRoot(ctx, path); !ok {
 		return "", fmt.Errorf("source path is not inside a git repository: %s", path)
 	}
-	dirty, err := gitWorktreeDirty(ctx, path)
-	if err != nil {
-		return "", err
+	args := []string{"-C", path, "pull", "--ff-only"}
+	if gitIsShallowRepository(ctx, path) {
+		args = append(args, "--depth=1")
 	}
-	if dirty {
-		return "", fmt.Errorf("repository has uncommitted changes: %s", path)
-	}
-
-	cmd := exec.CommandContext(ctx, "git", "-C", path, "pull")
+	cmd := exec.CommandContext(ctx, "git", args...)
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
@@ -78,7 +74,7 @@ func cloneGitRepository(ctx context.Context, cloneURL, parentDir, folderName str
 		return "", "", errors.New("git command not found")
 	}
 	targetPath := filepath.Join(parentDir, folderName)
-	cmd := exec.CommandContext(ctx, "git", "clone", cloneURL, targetPath)
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1", "--single-branch", "--no-tags", cloneURL, targetPath)
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
@@ -130,22 +126,15 @@ func gitCurrentRef(ctx context.Context, path string) string {
 	return strings.TrimSpace(string(output))
 }
 
-func gitWorktreeDirty(ctx context.Context, path string) (bool, error) {
+func gitIsShallowRepository(ctx context.Context, path string) bool {
 	if _, err := exec.LookPath("git"); err != nil {
-		return false, errors.New("git command not found")
+		return false
 	}
-	cmd := exec.CommandContext(ctx, "git", "-C", path, "status", "--porcelain")
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output
-	if err := cmd.Run(); err != nil {
-		message := strings.TrimSpace(output.String())
-		if message == "" {
-			message = err.Error()
-		}
-		return false, fmt.Errorf("git status failed: %s", message)
+	output, err := exec.CommandContext(ctx, "git", "-C", path, "rev-parse", "--is-shallow-repository").Output()
+	if err != nil {
+		return false
 	}
-	return strings.TrimSpace(output.String()) != "", nil
+	return strings.TrimSpace(string(output)) == "true"
 }
 
 var scpLikeGitRemote = regexp.MustCompile(`^(?:[^@]+@)?([^:]+):/?(.+)$`)

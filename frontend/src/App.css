@@ -160,6 +160,30 @@
   border-style: dashed;
 }
 
+.loading-overlay {
+  pointer-events: all;
+}
+
+.loading-panel {
+  box-shadow: var(--sm-shadow);
+}
+
+.loading-progress-bar {
+  width: 42%;
+  background: linear-gradient(90deg, var(--sm-link), var(--sm-violet));
+  animation: loading-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes loading-progress-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+
+  100% {
+    transform: translateX(250%);
+  }
+}
+
 .skill-header-cell {
   border-bottom: 1px solid var(--sm-line);
   background: #edf2ef !important;

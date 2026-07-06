@@ -239,6 +239,31 @@ func TestDisableRemovesOnlyMatchingSymlink(t *testing.T) {
 	}
 }
 
+func TestResolveConflictReplacesBrokenSymlink(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	target := filepath.Join(root, "target")
+	skillPath := filepath.Join(source, "frontend-design")
+	mustWrite(t, filepath.Join(skillPath, "SKILL.md"), "# frontend-design\n")
+	mustMkdir(t, target)
+	mustSymlink(t, filepath.Join(root, "missing", "frontend-design"), filepath.Join(target, "frontend-design"))
+
+	err := NewService().ResolveConflict(context.Background(), Config{TargetDirs: []string{target}}, Skill{
+		Name:       "frontend-design",
+		SourcePath: skillPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := os.Readlink(filepath.Join(target, "frontend-design"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual != skillPath {
+		t.Fatalf("expected symlink to point to %s, got %s", skillPath, actual)
+	}
+}
+
 func TestStrictValidationMarksMissingSkillFileInvalid(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "source")

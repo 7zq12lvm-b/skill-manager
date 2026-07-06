@@ -46,6 +46,10 @@ export function EnableSkillLocalOnly(arg1) {
   return window['go']['main']['App']['EnableSkillLocalOnly'](arg1);
 }
 
+export function GetDebugLogPath() {
+  return window['go']['main']['App']['GetDebugLogPath']();
+}
+
 export function GetInventory() {
   return window['go']['main']['App']['GetInventory']();
 }

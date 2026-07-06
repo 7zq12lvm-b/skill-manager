@@ -37,6 +37,7 @@ type SkillStore = {
   statusFilter: StatusFilter;
   query: string;
   loading: boolean;
+  loadingLabel?: string;
   error?: string;
   pullResults: Record<string, string>;
   setInventory: (inventory: skillmgr.Inventory) => void;
@@ -75,14 +76,28 @@ type SkillStore = {
 async function runWithInventory(
   set: (partial: Partial<SkillStore>) => void,
   action: () => Promise<skillmgr.Inventory>,
+  loadingLabel = "Working...",
 ) {
-  set({ loading: true, error: undefined });
+  set({ loading: true, loadingLabel, error: undefined });
+  await waitForPaint();
   try {
     const inventory = await action();
-    set({ inventory, loading: false });
+    set({ inventory, loading: false, loadingLabel: undefined });
   } catch (error) {
-    set({ error: error instanceof Error ? error.message : String(error), loading: false });
+    set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
   }
+}
+
+function waitForPaint() {
+  return new Promise<void>((resolve) => {
+    if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+      setTimeout(resolve, 0);
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => resolve());
+    });
+  });
 }
 
 function summarizePullMessage(message: string) {
@@ -125,21 +140,22 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
       selectedSkillId: stillExists ? selectedSkillId : inventory.skills?.[0]?.id,
     });
   },
-  load: async () => runWithInventory(set, GetInventory),
-  rescan: async () => runWithInventory(set, RescanAll),
-  addSource: async (path) => runWithInventory(set, () => AddSource(path)),
+  load: async () => runWithInventory(set, GetInventory, "Loading inventory..."),
+  rescan: async () => runWithInventory(set, RescanAll, "Scanning skills..."),
+  addSource: async (path) => runWithInventory(set, () => AddSource(path), "Scanning repository..."),
   browseAndAddSource: async () => {
-    set({ loading: true, error: undefined });
+    set({ error: undefined });
     try {
       const path = await BrowseForSource();
       if (!path) {
-        set({ loading: false });
         return;
       }
+      set({ loading: true, loadingLabel: "Scanning repository...", error: undefined });
+      await waitForPaint();
       const inventory = await AddSource(path);
-      set({ inventory, loading: false });
+      set({ inventory, loading: false, loadingLabel: undefined });
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error), loading: false });
+      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
     }
   },
   browseForTarget: async () => {
@@ -166,73 +182,91 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
       return "";
     }
   },
-  removeSource: async (sourceId) => runWithInventory(set, () => RemoveSource(sourceId)),
+  removeSource: async (sourceId) => runWithInventory(set, () => RemoveSource(sourceId), "Updating repositories..."),
   renameSource: async (sourceId, alias) =>
-    runWithInventory(set, () => RenameRepository(sourceId, alias).catch(() => RenameSource(sourceId, alias))),
+    runWithInventory(set, () => RenameRepository(sourceId, alias).catch(() => RenameSource(sourceId, alias)), "Saving alias..."),
   pullSource: async (sourceId) => {
-    set({ loading: true, error: undefined });
+    set({ loading: true, loadingLabel: "Pulling repository...", error: undefined });
+    await waitForPaint();
     try {
       const result = await PullSource(sourceId);
       set((state) => ({
         inventory: result.inventory,
         loading: false,
+        loadingLabel: undefined,
         pullResults: { ...state.pullResults, [sourceId]: summarizePullMessage(result.message) },
       }));
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error), loading: false });
+      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
     }
   },
   pullRepository: async (repoId) => {
-    set({ loading: true, error: undefined });
+    set({ loading: true, loadingLabel: "Pulling repository...", error: undefined });
+    await waitForPaint();
     try {
       const result = await PullRepository(repoId).catch(() => PullSource(repoId));
       set((state) => ({
         inventory: result.inventory,
         loading: false,
+        loadingLabel: undefined,
         pullResults: { ...state.pullResults, [repoId]: summarizePullMessage(result.message) },
       }));
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error), loading: false });
+      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
     }
   },
-  enableSkill: async (skillId) => runWithInventory(set, () => EnableSkill(skillId)),
-  enableSkillLocalOnly: async (skillId) => runWithInventory(set, () => EnableSkillLocalOnly(skillId)),
-  disableSkill: async (skillId) => runWithInventory(set, () => DisableSkill(skillId)),
-  removeSkillFromSync: async (skillId) => runWithInventory(set, () => RemoveSkillFromSync(skillId)),
+  enableSkill: async (skillId) => runWithInventory(set, () => EnableSkill(skillId), "Enabling skill..."),
+  enableSkillLocalOnly: async (skillId) => runWithInventory(set, () => EnableSkillLocalOnly(skillId), "Enabling skill..."),
+  disableSkill: async (skillId) => runWithInventory(set, () => DisableSkill(skillId), "Disabling skill..."),
+  removeSkillFromSync: async (skillId) => runWithInventory(set, () => RemoveSkillFromSync(skillId), "Updating sync..."),
   applySync: async () => {
-    set({ loading: true, error: undefined });
+    set({ loading: true, loadingLabel: "Applying sync...", error: undefined });
+    await waitForPaint();
     try {
       const result = await ApplySync();
-      set({ inventory: result.inventory, loading: false, pullResults: { ...get().pullResults, sync: result.message } });
+      set({
+        inventory: result.inventory,
+        loading: false,
+        loadingLabel: undefined,
+        pullResults: { ...get().pullResults, sync: result.message },
+      });
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error), loading: false });
+      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
     }
   },
   adoptCurrentEnabledSkills: async () => {
-    set({ loading: true, error: undefined });
+    set({ loading: true, loadingLabel: "Adopting enabled skills...", error: undefined });
+    await waitForPaint();
     try {
       const result = await AdoptCurrentEnabledSkills();
       const skipped = result.skipped?.length ? `, skipped ${result.skipped.length}` : "";
       set({
         inventory: result.inventory,
         loading: false,
+        loadingLabel: undefined,
         pullResults: { ...get().pullResults, sync: `Adopted ${result.adopted}${skipped}` },
       });
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error), loading: false });
+      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
     }
   },
   cloneRepository: async (repoId, cloneUrl, parentDir, folderName) => {
-    set({ loading: true, error: undefined });
+    set({ loading: true, loadingLabel: "Cloning repository...", error: undefined });
+    await waitForPaint();
     try {
       const result = await CloneRepository(repoId, cloneUrl, parentDir, folderName);
-      set({ inventory: result.inventory, loading: false, pullResults: { ...get().pullResults, [repoId]: result.message } });
+      set({
+        inventory: result.inventory,
+        loading: false,
+        loadingLabel: undefined,
+        pullResults: { ...get().pullResults, [repoId]: result.message },
+      });
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error), loading: false });
+      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
     }
   },
-  resolveConflict: async (skillId) => runWithInventory(set, () => ResolveConflict(skillId)),
-  saveConfig: async (config) => runWithInventory(set, () => SaveConfig(config)),
+  resolveConflict: async (skillId) => runWithInventory(set, () => ResolveConflict(skillId), "Resolving conflict..."),
+  saveConfig: async (config) => runWithInventory(set, () => SaveConfig(config), "Saving settings..."),
   readSkillEnv: async (skillId) => {
     try {
       return await ReadSkillEnvFile(skillId);
@@ -242,17 +276,18 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
     }
   },
   saveSkillEnv: async (skillId, content) => {
-    set({ loading: true, error: undefined });
+    set({ loading: true, loadingLabel: "Saving .env...", error: undefined });
+    await waitForPaint();
     try {
       const inventory = await SaveSkillEnvFile(skillId, content);
-      set({ inventory, loading: false });
+      set({ inventory, loading: false, loadingLabel: undefined });
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error), loading: false });
+      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
       throw error;
     }
   },
   saveSkillTags: async (skillId, tags) =>
-    runWithInventory(set, () => SaveSkillTags(skillId, tags)),
+    runWithInventory(set, () => SaveSkillTags(skillId, tags), "Saving tags..."),
   openPath: async (path) => {
     try {
       await OpenPath(path);

@@ -24,6 +24,8 @@ export function EnableSkill(arg1:string):Promise<skillmgr.Inventory>;
 
 export function EnableSkillLocalOnly(arg1:string):Promise<skillmgr.Inventory>;
 
+export function GetDebugLogPath():Promise<string>;
+
 export function GetInventory():Promise<skillmgr.Inventory>;
 
 export function OpenInVSCode(arg1:string):Promise<void>;

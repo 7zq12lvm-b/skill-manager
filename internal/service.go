@@ -1,24 +1,41 @@
 package skillmgr
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-type Service struct{}
+type Service struct {
+	logger func(string, ...any)
+}
 
 func NewService() *Service {
 	return &Service{}
+}
+
+func (s *Service) SetLogger(logger func(string, ...any)) {
+	s.logger = logger
+}
+
+func (s *Service) logf(format string, args ...any) {
+	if s.logger != nil {
+		s.logger(format, args...)
+	}
 }
 
 func (s *Service) Scan(ctx context.Context, config Config) (Inventory, error) {
@@ -119,6 +136,8 @@ func (s *Service) ScanWithSync(ctx context.Context, config Config, syncDocument 
 }
 
 func (s *Service) scanRepository(ctx context.Context, config RepositoryConfig, appConfig Config, scannedAt string) (Repository, []Skill) {
+	startedAt := time.Now()
+	s.logf("scan repository start repo_id=%q path=%q scan_roots=%v ignore_paths=%v", config.RepoID, config.Path, config.ScanRoots, config.IgnorePaths)
 	repository := Repository{
 		ID:            config.ID,
 		RepoID:        config.RepoID,
@@ -131,12 +150,14 @@ func (s *Service) scanRepository(ctx context.Context, config RepositoryConfig, a
 		LastScannedAt: scannedAt,
 	}
 	if !config.Enabled {
+		s.logf("scan repository skipped disabled repo_id=%q duration=%s", config.RepoID, time.Since(startedAt))
 		return repository, nil
 	}
 	gitRoot, ok := gitRepositoryRoot(ctx, config.Path)
 	if !ok {
 		repository.ErrorCount = 1
 		repository.Error = "repository path is not inside a git repository"
+		s.logf("scan repository error repo_id=%q path=%q error=%q duration=%s", config.RepoID, config.Path, repository.Error, time.Since(startedAt))
 		return repository, nil
 	}
 	repository.IsGitRepo = true
@@ -144,12 +165,11 @@ func (s *Service) scanRepository(ctx context.Context, config RepositoryConfig, a
 		repository.Path = gitRoot
 	}
 	repository.CurrentRef = gitCurrentRef(ctx, repository.Path)
-	if dirty, err := gitWorktreeDirty(ctx, repository.Path); err == nil {
-		repository.Dirty = dirty
-	}
 
-	skills := make([]Skill, 0)
-	for _, skillPath := range discoverSkillFolders(repository.Path, config.ScanRoots, config.IgnorePaths) {
+	skillPaths := s.discoverSkillFolders(ctx, repository.Path, config.ScanRoots, config.IgnorePaths)
+	skillContents := repositorySkillContents(ctx, repository.Path, skillPaths)
+	skills := make([]Skill, 0, len(skillPaths))
+	for _, skillPath := range skillPaths {
 		repoSubpath, err := filepath.Rel(repository.Path, skillPath)
 		if err != nil {
 			continue
@@ -180,8 +200,11 @@ func (s *Service) scanRepository(ctx context.Context, config RepositoryConfig, a
 			Ref:           repository.CurrentRef,
 			LastScannedAt: scannedAt,
 		}
-		attachSkillMetadata(&skill)
-		validateSkill(&skill, appConfig.Validation)
+		if content, ok := skillContents[repoSubpath]; ok {
+			skill.Files = []string{"SKILL.md"}
+			attachSkillTextMetadata(&skill, "SKILL.md", content)
+		}
+		validateRepositorySkill(ctx, &skill, appConfig.Validation)
 		if skill.Manifest != nil && skill.Manifest.Name != "" {
 			skill.DisplayName = skill.Manifest.Name
 		}
@@ -191,6 +214,7 @@ func (s *Service) scanRepository(ctx context.Context, config RepositoryConfig, a
 		}
 		skills = append(skills, skill)
 	}
+	s.logf("scan repository done repo_id=%q path=%q skills=%d errors=%d dirty=%v duration=%s", config.RepoID, repository.Path, repository.SkillCount, repository.ErrorCount, repository.Dirty, time.Since(startedAt))
 	return repository, skills
 }
 
@@ -579,7 +603,7 @@ func inspectTargets(name string, sourcePath string, targetDirs []string) []Skill
 	return targetStates
 }
 
-func discoverSkillFolders(repoPath string, scanRoots []string, ignorePaths []string) []string {
+func (s *Service) discoverSkillFolders(ctx context.Context, repoPath string, scanRoots []string, ignorePaths []string) []string {
 	if len(scanRoots) == 0 {
 		scanRoots = []string{"."}
 	}
@@ -590,6 +614,51 @@ func discoverSkillFolders(repoPath string, scanRoots []string, ignorePaths []str
 			ignoreSet[ignorePath] = true
 		}
 	}
+	if found, ok := discoverSkillFoldersFromGitIndex(ctx, repoPath, scanRoots, ignoreSet); ok {
+		s.logf("discover skills via git index path=%q skills=%d", repoPath, len(found))
+		if len(found) > 0 {
+			return found
+		}
+	}
+	s.logf("discover skills fallback walk path=%q", repoPath)
+	return discoverSkillFoldersByWalking(repoPath, scanRoots, ignoreSet)
+}
+
+func discoverSkillFoldersFromGitIndex(ctx context.Context, repoPath string, scanRoots []string, ignoreSet map[string]bool) ([]string, bool) {
+	if _, err := exec.LookPath("git"); err != nil {
+		return nil, false
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "ls-files", "-z")
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	if err := cmd.Run(); err != nil {
+		return nil, false
+	}
+	found := make([]string, 0)
+	seen := map[string]bool{}
+	for _, rawPath := range bytes.Split(output.Bytes(), []byte{0}) {
+		if len(rawPath) == 0 {
+			continue
+		}
+		rel := filepath.ToSlash(string(rawPath))
+		if filepath.Base(rel) != "SKILL.md" {
+			continue
+		}
+		folder := cleanRepoSubpath(filepath.Dir(rel))
+		if !repoPathWithinScanRoots(folder, scanRoots) || repoPathIgnored(folder, ignoreSet) {
+			continue
+		}
+		skillPath := filepath.Join(repoPath, filepath.FromSlash(folder))
+		if !seen[skillPath] {
+			seen[skillPath] = true
+			found = append(found, skillPath)
+		}
+	}
+	sort.Strings(found)
+	return found, true
+}
+
+func discoverSkillFoldersByWalking(repoPath string, scanRoots []string, ignoreSet map[string]bool) []string {
 	found := make([]string, 0)
 	seen := map[string]bool{}
 	for _, scanRoot := range scanRoots {
@@ -621,6 +690,35 @@ func discoverSkillFolders(repoPath string, scanRoots []string, ignorePaths []str
 	}
 	sort.Strings(found)
 	return found
+}
+
+func repoPathWithinScanRoots(path string, scanRoots []string) bool {
+	path = cleanRepoSubpath(path)
+	for _, root := range scanRoots {
+		root = cleanRepoSubpath(root)
+		if root == "." || path == root || strings.HasPrefix(path, root+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func repoPathIgnored(path string, ignoreSet map[string]bool) bool {
+	path = cleanRepoSubpath(path)
+	if ignoreSet[path] {
+		return true
+	}
+	for ignorePath := range ignoreSet {
+		if ignorePath != "." && strings.HasPrefix(path, ignorePath+"/") {
+			return true
+		}
+	}
+	for _, part := range strings.Split(path, "/") {
+		if defaultIgnoredDirName(part) {
+			return true
+		}
+	}
+	return false
 }
 
 func shouldIgnoreScanDir(repoPath, path, name string, ignoreSet map[string]bool) bool {
@@ -712,21 +810,204 @@ func attachSkillMetadata(skill *Skill) {
 		if err != nil {
 			continue
 		}
-		text := string(content)
+		attachSkillTextMetadata(skill, previewFile, string(content))
+		return
+	}
+}
+
+func attachSkillTextMetadata(skill *Skill, previewFile string, content string) {
+	skill.PreviewFile = previewFile
+	skill.Preview = trimPreview(content)
+	if previewFile == "SKILL.md" {
+		manifest := parseSkillManifest(content)
+		if manifest != nil {
+			skill.Manifest = manifest
+			skill.Description = manifest.Description
+		}
+	}
+	if skill.Description == "" {
+		skill.Description = extractDescription(content)
+	}
+}
+
+func repositorySkillContents(ctx context.Context, repoPath string, skillPaths []string) map[string]string {
+	results := map[string]string{}
+	if len(skillPaths) == 0 {
+		return results
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		return results
+	}
+	type request struct {
+		repoSubpath string
+		objectPath  string
+	}
+	requests := make([]request, 0, len(skillPaths))
+	var input strings.Builder
+	for _, skillPath := range skillPaths {
+		repoSubpath, err := filepath.Rel(repoPath, skillPath)
+		if err != nil {
+			continue
+		}
+		repoSubpath = cleanRepoSubpath(repoSubpath)
+		objectPath := repoObjectPath(repoSubpath, "SKILL.md")
+		requests = append(requests, request{repoSubpath: repoSubpath, objectPath: objectPath})
+		input.WriteString("HEAD:")
+		input.WriteString(objectPath)
+		input.WriteByte('\n')
+	}
+	if len(requests) == 0 {
+		return results
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "cat-file", "--batch")
+	cmd.Stdin = strings.NewReader(input.String())
+	output, err := cmd.Output()
+	if err != nil {
+		return results
+	}
+	reader := bufio.NewReader(bytes.NewReader(output))
+	for _, request := range requests {
+		header, err := reader.ReadString('\n')
+		if err != nil {
+			return results
+		}
+		header = strings.TrimSpace(header)
+		if strings.HasSuffix(header, " missing") {
+			continue
+		}
+		fields := strings.Fields(header)
+		if len(fields) < 3 {
+			return results
+		}
+		size, err := strconv.Atoi(fields[2])
+		if err != nil || size < 0 {
+			return results
+		}
+		content := make([]byte, size)
+		if _, err := io.ReadFull(reader, content); err != nil {
+			return results
+		}
+		if _, err := reader.ReadByte(); err != nil {
+			return results
+		}
+		results[request.repoSubpath] = string(content)
+	}
+	return results
+}
+
+func (s *Service) attachRepositorySkillMetadata(ctx context.Context, skill *Skill) {
+	if skill.RepoPath == "" || skill.RepoSubpath == "" {
+		attachSkillMetadata(skill)
+		return
+	}
+	if files, ok := gitListTreeNames(ctx, skill.RepoPath, skill.RepoSubpath); ok {
+		skill.Files = files
+	}
+	if updatedAt := gitLastCommitTime(ctx, skill.RepoPath, repoObjectPath(skill.RepoSubpath, "SKILL.md")); updatedAt != "" {
+		skill.UpdatedAt = updatedAt
+	}
+	for _, previewFile := range []string{"SKILL.md", "README.md"} {
+		content, ok := gitShowFile(ctx, skill.RepoPath, skill.RepoSubpath, previewFile)
+		if !ok {
+			continue
+		}
 		skill.PreviewFile = previewFile
-		skill.Preview = trimPreview(text)
+		skill.Preview = trimPreview(content)
 		if previewFile == "SKILL.md" {
-			manifest := parseSkillManifest(text)
+			manifest := parseSkillManifest(content)
 			if manifest != nil {
 				skill.Manifest = manifest
 				skill.Description = manifest.Description
 			}
 		}
 		if skill.Description == "" {
-			skill.Description = extractDescription(text)
+			skill.Description = extractDescription(content)
 		}
 		return
 	}
+}
+
+func validateRepositorySkill(ctx context.Context, skill *Skill, config ValidationConfig) {
+	var required []string
+	switch config.Mode {
+	case ValidationStrict:
+		return
+	case ValidationCustom:
+		required = config.RequiredFiles
+	default:
+		return
+	}
+	for _, file := range required {
+		if file == "" {
+			continue
+		}
+		if !gitPathExists(ctx, skill.RepoPath, repoObjectPath(skill.RepoSubpath, file)) {
+			skill.ValidationErrors = append(skill.ValidationErrors, "Missing required file: "+file)
+		}
+	}
+}
+
+func gitListTreeNames(ctx context.Context, repoPath, repoSubpath string) ([]string, bool) {
+	if _, err := exec.LookPath("git"); err != nil {
+		return nil, false
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "ls-tree", "-z", "--name-only", "HEAD:"+cleanRepoSubpath(repoSubpath))
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	if err := cmd.Run(); err != nil {
+		return nil, false
+	}
+	files := make([]string, 0)
+	for _, rawName := range bytes.Split(output.Bytes(), []byte{0}) {
+		if len(rawName) == 0 {
+			continue
+		}
+		files = append(files, string(rawName))
+	}
+	sort.Strings(files)
+	return files, true
+}
+
+func gitShowFile(ctx context.Context, repoPath, repoSubpath, file string) (string, bool) {
+	if _, err := exec.LookPath("git"); err != nil {
+		return "", false
+	}
+	objectPath := repoObjectPath(repoSubpath, file)
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "show", "HEAD:"+objectPath)
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	if err := cmd.Run(); err != nil {
+		return "", false
+	}
+	return output.String(), true
+}
+
+func gitPathExists(ctx context.Context, repoPath, objectPath string) bool {
+	if _, err := exec.LookPath("git"); err != nil {
+		return false
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "cat-file", "-e", "HEAD:"+objectPath)
+	return cmd.Run() == nil
+}
+
+func gitLastCommitTime(ctx context.Context, repoPath, objectPath string) string {
+	if _, err := exec.LookPath("git"); err != nil {
+		return ""
+	}
+	output, err := exec.CommandContext(ctx, "git", "-C", repoPath, "log", "-1", "--format=%cI", "--", objectPath).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
+func repoObjectPath(repoSubpath, file string) string {
+	repoSubpath = cleanRepoSubpath(repoSubpath)
+	file = cleanRepoSubpath(file)
+	if repoSubpath == "." {
+		return file
+	}
+	return repoSubpath + "/" + file
 }
 
 func summarize(skills []Skill) Summary {

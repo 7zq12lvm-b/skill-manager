@@ -23,6 +23,7 @@ type App struct {
 	store     *skillmgr.ConfigStore
 	tagStore  *skillmgr.SkillTagStore
 	service   *skillmgr.Service
+	logPath   string
 	mu        sync.Mutex
 	config    skillmgr.Config
 	inventory skillmgr.Inventory
@@ -38,62 +39,120 @@ func NewApp() *App {
 	if err != nil {
 		tagPath = filepath.Join(".", "tags.json")
 	}
-	return &App{
+	app := &App{
 		store:    skillmgr.NewConfigStore(configPath),
 		tagStore: skillmgr.NewSkillTagStore(tagPath),
 		service:  skillmgr.NewService(),
+		logPath:  defaultDebugLogPath(),
 	}
+	app.service.SetLogger(app.debugLogf)
+	return app
+}
+
+func defaultDebugLogPath() string {
+	if runtime.GOOS == "darwin" {
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			return filepath.Join(homeDir, "Library", "Logs", "skill-manager", "debug.log")
+		}
+	}
+	cacheDir, err := os.UserCacheDir()
+	if err == nil {
+		return filepath.Join(cacheDir, "skill-manager", "debug.log")
+	}
+	return filepath.Join(".", "skill-manager-debug.log")
+}
+
+func (a *App) debugLogf(format string, args ...any) {
+	path := a.logPath
+	if path == "" {
+		path = defaultDebugLogPath()
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		fmt.Println("debug log:", err)
+		return
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		fmt.Println("debug log:", err)
+		return
+	}
+	defer file.Close()
+	message := fmt.Sprintf(format, args...)
+	_, _ = fmt.Fprintf(file, "%s %s\n", time.Now().Format(time.RFC3339Nano), message)
+}
+
+func (a *App) GetDebugLogPath() string {
+	return a.logPath
 }
 
 func (a *App) startup(ctx context.Context) {
+	a.debugLogf("startup begin")
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.ctx = ctx
 	config, err := a.store.Load()
 	if err != nil {
+		a.debugLogf("load config error: %v", err)
 		fmt.Println("load config:", err)
 		config = skillmgr.DefaultConfig()
 	}
 	a.config = config
+	a.debugLogf("config loaded repositories=%d sources=%d sync_folder=%q watch=%v", len(config.Repositories), len(config.Sources), config.Sync.Folder, config.Scan.WatchSourceFolders)
 	if a.migrateSourcesToRepositoriesLocked(ctx) {
+		a.debugLogf("migrated legacy sources repositories=%d remaining_sources=%d", len(a.config.Repositories), len(a.config.Sources))
 		if err := a.store.Save(a.config); err != nil {
+			a.debugLogf("save migrated config error: %v", err)
 			fmt.Println("save migrated config:", err)
 		}
 	}
 	if err := a.refreshLocked(ctx); err != nil {
+		a.debugLogf("initial scan error: %v", err)
 		fmt.Println("initial scan:", err)
 	}
 	if config.Scan.WatchSourceFolders {
 		if err := a.restartWatcherLocked(); err != nil {
+			a.debugLogf("start watcher error: %v", err)
 			fmt.Println("start watcher:", err)
 		}
 	}
+	a.debugLogf("startup done")
 }
 
 func (a *App) shutdown(ctx context.Context) {
+	a.debugLogf("shutdown begin")
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.watcher != nil {
 		_ = a.watcher.Close()
 		a.watcher = nil
 	}
+	a.debugLogf("shutdown done")
 }
 
 func (a *App) GetInventory() (skillmgr.Inventory, error) {
+	a.debugLogf("GetInventory begin")
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.inventory.Skills == nil && a.inventory.Sources == nil {
 		if err := a.refreshLocked(a.ctx); err != nil {
+			a.debugLogf("GetInventory refresh error: %v", err)
 			return skillmgr.Inventory{}, err
 		}
 	}
+	a.debugLogf("GetInventory done skills=%d repositories=%d", len(a.inventory.Skills), len(a.inventory.Repositories))
 	return a.inventory, nil
 }
 
 func (a *App) RescanAll() (skillmgr.Inventory, error) {
+	a.debugLogf("RescanAll begin")
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err := a.refreshLocked(a.ctx); err != nil {
+		a.debugLogf("RescanAll error: %v", err)
 		return skillmgr.Inventory{}, err
 	}
+	a.debugLogf("RescanAll done skills=%d repositories=%d", len(a.inventory.Skills), len(a.inventory.Repositories))
 	return a.inventory, nil
 }
 
@@ -612,17 +671,24 @@ func (a *App) OpenInVSCode(path string) error {
 }
 
 func (a *App) refreshLocked(ctx context.Context) error {
+	startedAt := time.Now()
+	a.debugLogf("refresh begin repositories=%d sources=%d", len(a.config.Repositories), len(a.config.Sources))
 	var syncDocument skillmgr.SyncDocument
 	syncStore := a.currentSyncStoreLocked()
 	var syncErr error
 	if syncStore != nil {
+		a.debugLogf("sync load begin path=%q", syncStore.Path())
 		syncDocument, syncErr = syncStore.Load()
 		if syncErr != nil {
+			a.debugLogf("sync load error path=%q error=%v", syncStore.Path(), syncErr)
 			syncDocument = skillmgr.SyncDocument{}
+		} else {
+			a.debugLogf("sync load done path=%q records=%d", syncStore.Path(), len(syncDocument.Skills))
 		}
 	}
 	inventory, err := a.service.ScanWithSync(ctx, a.config, syncDocument)
 	if err != nil {
+		a.debugLogf("refresh scan error: %v duration=%s", err, time.Since(startedAt))
 		return err
 	}
 	a.config = inventory.Config
@@ -637,6 +703,7 @@ func (a *App) refreshLocked(ctx context.Context) error {
 	if syncStore != nil {
 		a.migrateLegacyTagsToSyncLocked(syncStore)
 	}
+	a.debugLogf("refresh done skills=%d repositories=%d sources=%d duration=%s", len(a.inventory.Skills), len(a.inventory.Repositories), len(a.inventory.Sources), time.Since(startedAt))
 	return nil
 }
 
@@ -832,6 +899,7 @@ func (a *App) migrateLegacyTagsToSyncLocked(store *skillmgr.SyncStore) {
 }
 
 func (a *App) restartWatcherLocked() error {
+	a.debugLogf("watcher restart begin")
 	if a.watcher != nil {
 		_ = a.watcher.Close()
 		a.watcher = nil
@@ -842,36 +910,76 @@ func (a *App) restartWatcherLocked() error {
 	}
 	for _, source := range a.config.Sources {
 		if source.Enabled {
-			_ = watcher.Add(source.Path)
+			if err := watcher.Add(source.Path); err != nil {
+				a.debugLogf("watcher add source error path=%q error=%v", source.Path, err)
+			} else {
+				a.debugLogf("watcher add source path=%q", source.Path)
+			}
 		}
 	}
 	for _, repository := range a.config.Repositories {
 		if repository.Enabled {
-			_ = watcher.Add(repository.Path)
+			if err := watcher.Add(repository.Path); err != nil {
+				a.debugLogf("watcher add repository error repo_id=%q path=%q error=%v", repository.RepoID, repository.Path, err)
+			} else {
+				a.debugLogf("watcher add repository repo_id=%q path=%q", repository.RepoID, repository.Path)
+			}
 		}
 	}
 	a.watcher = watcher
 	go a.watchLoop(watcher)
+	a.debugLogf("watcher restart done")
 	return nil
 }
 
 func (a *App) watchLoop(watcher *fsnotify.Watcher) {
+	const debounceDelay = 900 * time.Millisecond
+	var timer *time.Timer
+	var timerC <-chan time.Time
+	scheduleRefresh := func(event fsnotify.Event) {
+		if event.Op == fsnotify.Chmod {
+			return
+		}
+		a.debugLogf("watcher event name=%q op=%s", event.Name, event.Op.String())
+		if timer == nil {
+			timer = time.NewTimer(debounceDelay)
+			timerC = timer.C
+			return
+		}
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(debounceDelay)
+	}
 	for {
 		select {
-		case _, ok := <-watcher.Events:
+		case event, ok := <-watcher.Events:
 			if !ok {
 				return
 			}
+			scheduleRefresh(event)
+		case <-timerC:
+			timer = nil
+			timerC = nil
 			a.mu.Lock()
 			if watcher == a.watcher {
-				_ = a.refreshLocked(a.ctx)
-				wailsRuntime.EventsEmit(a.ctx, "inventory:changed", a.inventory)
+				a.debugLogf("watcher refresh begin")
+				if err := a.refreshLocked(a.ctx); err != nil {
+					a.debugLogf("watcher refresh error: %v", err)
+				} else {
+					a.debugLogf("watcher refresh emit skills=%d repositories=%d", len(a.inventory.Skills), len(a.inventory.Repositories))
+					wailsRuntime.EventsEmit(a.ctx, "inventory:changed", a.inventory)
+				}
 			}
 			a.mu.Unlock()
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				return
 			}
+			a.debugLogf("watcher error: %v", err)
 			fmt.Println("watcher:", err)
 		}
 	}
