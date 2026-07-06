@@ -1,0 +1,78 @@
+frontend/src/store/useSkillStore.ts
+  s_8fbd275333a44a::t_4d82d44031aef3 276,279,281
+  s_8fbd275333a44a::t_e4dc833bdb3465 14,28,66-67,274-275,277-278,280,282-283
+internal/llm.go
+  s_8fbd275333a44a::t_c0fb6155e2bafd 1-48,50-119,121-133,135-205,210,212-214,226-236,238-247
+  s_8fbd275333a44a::t_11bd6d26e70e53 49,120
+  s_8fbd275333a44a::t_88bdae8c8ef9e2 237
+  s_8fbd275333a44a::t_f181ed56d6a712 134,206-209,211,215-225
+internal/service_test.go
+  s_8fbd275333a44a::t_2070cca3ac19ea 660-700
+frontend/src/App.tsx
+  s_8fbd275333a44a::t_c002b644ab2b73 963,977,1026
+  s_8fbd275333a44a::t_494aaa58b6798f 951-958,962,967,976,981
+  s_8fbd275333a44a::t_9b0a322a9fcf3d 685,744,746-748
+  s_8fbd275333a44a::t_6bdf283d159ae6 141,204,212-228,686,690
+  s_8fbd275333a44a::t_85d64e653312bd 143,188-203,205-210
+  s_8fbd275333a44a::t_5791c0d4cfddd7 1022-1025,1027-1029
+  s_8fbd275333a44a::t_3a0386cb87615f 1175-1178,1180-1184,1186-1190,1192-1210,1212-1213,1220-1244
+  s_8fbd275333a44a::t_d6e8961c5b86e6 115-116
+  s_8fbd275333a44a::t_4b82d6be855810 620,624
+  s_8fbd275333a44a::t_bfce7caec39a7c 1179,1185,1191,1211,1214-1219
+  s_8fbd275333a44a::t_086d8e5dae3bc7 1503,1506,1511-1513,1602-1674,1705
+  s_8fbd275333a44a::t_45930c5e094d48 211
+internal/types.go
+  s_8fbd275333a44a::t_6c3f2cf50076a5 106-112,192
+  s_8fbd275333a44a::t_539b83864b0ba1 181,185-186,188-191
+  s_8fbd275333a44a::t_b2dffe2d79e606 81
+  s_8fbd275333a44a::t_11bd6d26e70e53 187
+  s_8fbd275333a44a::t_b280ccea550fc2 193
+internal/sync_store_test.go
+  s_8fbd275333a44a::t_87e9a8cb025221 1-64
+app.go
+  s_8fbd275333a44a::t_16cb5b03d43ac1 544-636,952
+  s_8fbd275333a44a::t_7953b11fee296b 792
+  s_8fbd275333a44a::t_b29377da582d68 935,945-951
+  s_8fbd275333a44a::t_36e9298f99e0c7 953
+frontend/wailsjs/go/main/App.js
+  s_8fbd275333a44a::t_71a9b251c92753 49-52,113-115
+  s_8fbd275333a44a::t_443db10eca15f5 116
+frontend/wailsjs/go/main/App.d.ts
+  s_8fbd275333a44a::t_71a9b251c92753 27-28,59
+  s_8fbd275333a44a::t_df0c66b79097e6 60
+frontend/wailsjs/go/models.ts
+  s_8fbd275333a44a::t_351dff8d85bc4e 9,13,50,54,637,641,649-669
+  s_8fbd275333a44a::t_71a9b251c92753 3-8,10-12,14-22,43-49,51-53,55-64,176,221,454,471,632-636,638-640,642-643,645-646,648
+  s_8fbd275333a44a::t_f09f63d262c6ac 644,647
+internal/service.go
+  s_8fbd275333a44a::t_36c8dc32a70776 119,574-585
+  s_8fbd275333a44a::t_f0a4ab08ed0480 544,562,586-596
+  s_8fbd275333a44a::t_382f1003cf9b76 597
+internal/llm_test.go
+  s_8fbd275333a44a::t_8622a68e6e979f 7-8
+  s_8fbd275333a44a::t_9a87db0ea46d48 1-6,9-44
+internal/sync_store.go
+  s_8fbd275333a44a::t_11bd6d26e70e53 20-23,35-38,40-41
+  s_8fbd275333a44a::t_b173c6236cfb45 137-140
+  s_8fbd275333a44a::t_235d8e2491e8e7 127-136,141-159
+  s_8fbd275333a44a::t_14d1098413b4e0 166-176
+  s_8fbd275333a44a::t_5290da27ddb217 24,26-31,39,165,203,207-246
+  s_8fbd275333a44a::t_fafae1e716ec2a 25
+  s_8fbd275333a44a::t_d3e98c694d54d4 247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "30d0be7c8e7ab962e9686e6aaf78aa812f0a69c3",
+  "prompts": {},
+  "sessions": {
+    "s_8fbd275333a44a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f36ab-c2ab-78d1-a502-2f6a451ed944",
+        "model": "gpt-5.5"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
