@@ -1,5 +1,25 @@
 export namespace skillmgr {
 
+	export class SyncLLMConfig {
+	    baseUrl?: string;
+	    apiKey?: string;
+	    model?: string;
+	    temperature?: number;
+	    maxTokens?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new SyncLLMConfig(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.baseUrl = source["baseUrl"];
+	        this.apiKey = source["apiKey"];
+	        this.model = source["model"];
+	        this.temperature = source["temperature"];
+	        this.maxTokens = source["maxTokens"];
+	    }
+	}
 	export class Summary {
 	    skillsFound: number;
 	    enabled: number;
@@ -18,6 +38,28 @@ export namespace skillmgr {
 	        this.conflicts = source["conflicts"];
 	        this.invalid = source["invalid"];
 	        this.errors = source["errors"];
+	    }
+	}
+	export class SkillProfile {
+	    summaryZh?: string;
+	    useCasesZh?: string[];
+	    generatedAt?: string;
+	    model?: string;
+	    sourceHash?: string;
+	    error?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SkillProfile(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.summaryZh = source["summaryZh"];
+	        this.useCasesZh = source["useCasesZh"];
+	        this.generatedAt = source["generatedAt"];
+	        this.model = source["model"];
+	        this.sourceHash = source["sourceHash"];
+	        this.error = source["error"];
 	    }
 	}
 	export class ConflictSource {
@@ -131,6 +173,7 @@ export namespace skillmgr {
 	    lastScannedAt?: string;
 	    conflictSources?: ConflictSource[];
 	    tags?: string[];
+	    profile?: SkillProfile;
 	    error?: string;
 
 	    static createFrom(source: any = {}) {
@@ -175,6 +218,7 @@ export namespace skillmgr {
 	        this.lastScannedAt = source["lastScannedAt"];
 	        this.conflictSources = this.convertValues(source["conflictSources"], ConflictSource);
 	        this.tags = source["tags"];
+	        this.profile = this.convertValues(source["profile"], SkillProfile);
 	        this.error = source["error"];
 	    }
 
@@ -407,6 +451,7 @@ export namespace skillmgr {
 	    syncConfigured: boolean;
 	    syncPath?: string;
 	    syncError?: string;
+	    llmConfig?: SyncLLMConfig;
 	    legacyTagMessage?: string;
 
 	    static createFrom(source: any = {}) {
@@ -423,6 +468,7 @@ export namespace skillmgr {
 	        this.syncConfigured = source["syncConfigured"];
 	        this.syncPath = source["syncPath"];
 	        this.syncError = source["syncError"];
+	        this.llmConfig = this.convertValues(source["llmConfig"], SyncLLMConfig);
 	        this.legacyTagMessage = source["legacyTagMessage"];
 	    }
 
@@ -581,6 +627,44 @@ export namespace skillmgr {
 
 
 
+
+
+	export class SkillProfileResult {
+	    inventory: Inventory;
+	    profile?: SkillProfile;
+	    generated: boolean;
+	    message?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SkillProfileResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.inventory = this.convertValues(source["inventory"], Inventory);
+	        this.profile = this.convertValues(source["profile"], SkillProfile);
+	        this.generated = source["generated"];
+	        this.message = source["message"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 
 

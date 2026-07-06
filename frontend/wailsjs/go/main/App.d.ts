@@ -24,6 +24,8 @@ export function EnableSkill(arg1:string):Promise<skillmgr.Inventory>;
 
 export function EnableSkillLocalOnly(arg1:string):Promise<skillmgr.Inventory>;
 
+export function GenerateSkillProfile(arg1:string,arg2:boolean):Promise<skillmgr.SkillProfileResult>;
+
 export function GetDebugLogPath():Promise<string>;
 
 export function GetInventory():Promise<skillmgr.Inventory>;
@@ -53,6 +55,8 @@ export function RescanAll():Promise<skillmgr.Inventory>;
 export function ResolveConflict(arg1:string):Promise<skillmgr.Inventory>;
 
 export function SaveConfig(arg1:skillmgr.Config):Promise<skillmgr.Inventory>;
+
+export function SaveLLMConfig(arg1:skillmgr.SyncLLMConfig):Promise<skillmgr.Inventory>;
 
 export function SaveSkillEnvFile(arg1:string,arg2:string):Promise<skillmgr.Inventory>;
 

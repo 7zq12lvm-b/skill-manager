@@ -112,6 +112,8 @@ function App() {
     cloneRepository,
     resolveConflict,
     saveConfig,
+    saveLLMConfig,
+    generateSkillProfile,
     readSkillEnv,
     saveSkillEnv,
     saveSkillTags,
@@ -136,7 +138,9 @@ function App() {
     readStoredWidth(DETAIL_WIDTH_KEY, DEFAULT_DETAIL_WIDTH, MIN_DETAIL_WIDTH, MAX_DETAIL_WIDTH),
   );
   const [skillColumnWidths, setSkillColumnWidths] = useState(readStoredSkillColumnWidths);
+  const [generatingProfileIds, setGeneratingProfileIds] = useState<Set<string>>(() => new Set());
   const skillsTableRef = useRef<HTMLDivElement>(null);
+  const requestedProfilesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     load();
@@ -180,6 +184,47 @@ function App() {
     inventory?.skills?.find((skill) => skill.id === selectedSkillId) ??
     filteredSkills[0];
   const workbenchGridColumns = buildWorkbenchGridColumns(sourcePanelWidth, detailPanelWidth);
+
+  function maybeGenerateProfileForSkill(skill: skillmgr.Skill) {
+    if (
+      !inventory?.syncConfigured ||
+      !llmConfigReady(inventory.llmConfig) ||
+      !skill.syncId ||
+      !skill.sourcePath ||
+      !skill.canSync ||
+      profileComplete(skill.profile)
+    ) {
+      return;
+    }
+    const requestKey = skill.syncId || skill.id;
+    if (requestedProfilesRef.current.has(requestKey)) {
+      return;
+    }
+    requestedProfilesRef.current.add(requestKey);
+    void generateProfile(skill.id, false);
+  }
+
+  function selectSkillWithProfile(skill: skillmgr.Skill) {
+    selectSkill(skill.id);
+    maybeGenerateProfileForSkill(skill);
+  }
+
+  async function generateProfile(skillId: string, force = false) {
+    setGeneratingProfileIds((current) => {
+      const next = new Set(current);
+      next.add(skillId);
+      return next;
+    });
+    try {
+      await generateSkillProfile(skillId, force);
+    } finally {
+      setGeneratingProfileIds((current) => {
+        const next = new Set(current);
+        next.delete(skillId);
+        return next;
+      });
+    }
+  }
 
   async function submitSource() {
     if (!sourcePath.trim()) return;
@@ -572,11 +617,11 @@ function App() {
                       "skill-row cursor-pointer border-b border-border bg-white hover:bg-blue-50/50",
                       selectedSkill?.id === skill.id && "skill-row--selected bg-blue-50",
                     )}
-                    onClick={() => selectSkill(skill.id)}
+                    onClick={() => selectSkillWithProfile(skill)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        selectSkill(skill.id);
+                        selectSkillWithProfile(skill);
                       }
                     }}
                     role="button"
@@ -637,9 +682,12 @@ function App() {
           <SkillDetail
             skill={selectedSkill}
             syncConfigured={Boolean(inventory?.syncConfigured)}
+            llmConfig={inventory?.llmConfig}
+            isGeneratingProfile={Boolean(selectedSkill && generatingProfileIds.has(selectedSkill.id))}
             onEnable={enableSkill}
             onEnableLocalOnly={enableSkillLocalOnly}
             onResolve={resolveConflict}
+            onGenerateProfile={generateProfile}
             onReadEnv={readSkillEnv}
             onSaveEnv={saveSkillEnv}
             onSaveTags={saveSkillTags}
@@ -693,8 +741,11 @@ function App() {
           onClose={() => setSettingsOpen(false)}
           onBrowseTarget={browseForTarget}
           onBrowseSyncFolder={browseForSyncFolder}
-          onSave={async (config) => {
+          onSave={async (config, llmConfig) => {
             await saveConfig(config);
+            if (config.sync?.folder) {
+              await saveLLMConfig(llmConfig);
+            }
             setSettingsOpen(false);
           }}
         />
@@ -897,12 +948,23 @@ function cleanUiTags(tags: string[]) {
   );
 }
 
+function llmConfigReady(config?: skillmgr.SyncLLMConfig) {
+  return Boolean(config?.baseUrl?.trim() && config?.apiKey?.trim() && config?.model?.trim());
+}
+
+function profileComplete(profile?: skillmgr.SkillProfile) {
+  return Boolean(profile?.summaryZh?.trim() && (profile.useCasesZh?.length ?? 0) > 0);
+}
+
 function SkillDetail({
   skill,
   syncConfigured,
+  llmConfig,
+  isGeneratingProfile,
   onEnable,
   onEnableLocalOnly,
   onResolve,
+  onGenerateProfile,
   onReadEnv,
   onSaveEnv,
   onSaveTags,
@@ -911,9 +973,12 @@ function SkillDetail({
 }: {
   skill?: skillmgr.Skill;
   syncConfigured: boolean;
+  llmConfig?: skillmgr.SyncLLMConfig;
+  isGeneratingProfile: boolean;
   onEnable: (skillId: string) => Promise<void>;
   onEnableLocalOnly: (skillId: string) => Promise<void>;
   onResolve: (skillId: string) => Promise<void>;
+  onGenerateProfile: (skillId: string, force?: boolean) => Promise<void>;
   onReadEnv: (skillId: string) => Promise<string>;
   onSaveEnv: (skillId: string, content: string) => Promise<void>;
   onSaveTags: (skillId: string, tags: string[]) => Promise<void>;
@@ -952,6 +1017,14 @@ function SkillDetail({
         onEnableLocalOnly={onEnableLocalOnly}
         onRemoveFromSync={onRemoveFromSync}
         onInstallRepository={onInstallRepository}
+      />
+
+      <SkillProfileSections
+        skill={skill}
+        syncConfigured={syncConfigured}
+        llmConfig={llmConfig}
+        isGenerating={isGeneratingProfile}
+        onGenerateProfile={onGenerateProfile}
       />
 
       <DetailSection title="Tags">
@@ -1096,6 +1169,76 @@ function SyncSection({
         </div>
       </div>
     </DetailSection>
+  );
+}
+
+function SkillProfileSections({
+  skill,
+  syncConfigured,
+  llmConfig,
+  isGenerating,
+  onGenerateProfile,
+}: {
+  skill: skillmgr.Skill;
+  syncConfigured: boolean;
+  llmConfig?: skillmgr.SyncLLMConfig;
+  isGenerating: boolean;
+  onGenerateProfile: (skillId: string, force?: boolean) => Promise<void>;
+}) {
+  const profile = skill.profile;
+  const canGenerate = Boolean(syncConfigured && skill.canSync && skill.syncId && skill.sourcePath && llmConfigReady(llmConfig));
+  const hasProfile = profileComplete(profile);
+  const emptyMessage = isGenerating ? "正在生成..." : llmConfigReady(llmConfig) ? "尚未生成。" : "未配置 LLM。";
+
+  return (
+    <>
+      <DetailSection title="能力简介">
+        <div className="min-w-0 rounded-md border border-border bg-slate-50 p-3">
+          {profile?.summaryZh ? (
+            <p className="break-words text-sm leading-6 text-slate-800">{profile.summaryZh}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+          )}
+          <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <span className="min-w-0 truncate text-xs text-muted-foreground">
+              {profile?.generatedAt
+                ? `${profile.model || "LLM"} · ${formatDate(profile.generatedAt)}`
+                : skill.syncId || skill.repoSubpath || skill.name}
+            </span>
+            <Button
+              variant="outline"
+              onClick={() => void onGenerateProfile(skill.id, true)}
+              disabled={!canGenerate || isGenerating}
+              title={canGenerate ? undefined : "Configure sync and LLM first"}
+            >
+              {isGenerating ? (
+                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw aria-hidden="true" className="h-4 w-4" />
+              )}
+              {isGenerating ? "生成中..." : hasProfile ? "重新生成" : "生成"}
+            </Button>
+          </div>
+        </div>
+      </DetailSection>
+
+      <DetailSection title="使用案例">
+        <div className="min-w-0 rounded-md border border-border bg-white p-3">
+          {profile?.useCasesZh?.length ? (
+            <ul className="space-y-2">
+              {profile.useCasesZh.map((useCase) => (
+                <li key={useCase} className="flex min-w-0 gap-2 text-sm leading-6 text-slate-800">
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
+                  <span className="min-w-0 break-words">{useCase}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+          )}
+        </div>
+      </DetailSection>
+    </>
   );
 }
 
@@ -1357,12 +1500,16 @@ function SettingsModal({
   onClose: () => void;
   onBrowseTarget: () => Promise<string>;
   onBrowseSyncFolder: () => Promise<string>;
-  onSave: (config: skillmgr.Config) => Promise<void>;
+  onSave: (config: skillmgr.Config, llmConfig: skillmgr.SyncLLMConfig) => Promise<void>;
 }) {
   const [config, setConfig] = useState(() => skillmgr.Config.createFrom(inventory.config));
+  const [llmConfig, setLLMConfig] = useState(() => skillmgr.SyncLLMConfig.createFrom(inventory.llmConfig ?? {}));
   const [newTargetDir, setNewTargetDir] = useState("");
   const updateConfig = (next: Partial<skillmgr.Config>) => {
     setConfig(skillmgr.Config.createFrom({ ...config, ...next }));
+  };
+  const updateLLMConfig = (next: Partial<skillmgr.SyncLLMConfig>) => {
+    setLLMConfig(skillmgr.SyncLLMConfig.createFrom({ ...llmConfig, ...next }));
   };
   const updateScan = (next: Partial<skillmgr.ScanConfig>) => {
     updateConfig({ scan: skillmgr.ScanConfig.createFrom({ ...config.scan, ...next }) });
@@ -1452,6 +1599,79 @@ function SettingsModal({
           </div>
           {inventory.syncPath && <div className="mt-2 break-all font-mono text-xs text-muted-foreground">{inventory.syncPath}</div>}
         </div>
+        <div className="block text-sm font-medium">
+          LLM profile generation
+          <div className="mt-2 space-y-3 rounded-md border border-border bg-slate-50 p-3">
+            <label className="block text-xs font-medium text-slate-700">
+              Base URL
+              <input
+                aria-label="LLM base URL"
+                autoComplete="off"
+                name="llm-base-url"
+                value={llmConfig.baseUrl ?? ""}
+                onChange={(event) => updateLLMConfig({ baseUrl: event.target.value })}
+                className="mt-1 h-9 w-full rounded-md border border-input bg-white px-3 text-sm"
+                placeholder="https://api.deepseek.com"
+              />
+            </label>
+            <label className="block text-xs font-medium text-slate-700">
+              API Key
+              <input
+                aria-label="LLM API key"
+                autoComplete="off"
+                name="llm-api-key"
+                type="password"
+                value={llmConfig.apiKey ?? ""}
+                onChange={(event) => updateLLMConfig({ apiKey: event.target.value })}
+                className="mt-1 h-9 w-full rounded-md border border-input bg-white px-3 text-sm"
+                placeholder="sk-..."
+              />
+            </label>
+            <label className="block text-xs font-medium text-slate-700">
+              Model
+              <input
+                aria-label="LLM model"
+                autoComplete="off"
+                name="llm-model"
+                value={llmConfig.model ?? ""}
+                onChange={(event) => updateLLMConfig({ model: event.target.value })}
+                className="mt-1 h-9 w-full rounded-md border border-input bg-white px-3 text-sm"
+                placeholder="deepseek-v4-flash"
+              />
+            </label>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block text-xs font-medium text-slate-700">
+                Temperature
+                <input
+                  aria-label="LLM temperature"
+                  autoComplete="off"
+                  min={0}
+                  name="llm-temperature"
+                  step={0.1}
+                  type="number"
+                  value={llmConfig.temperature ?? 0}
+                  onChange={(event) => updateLLMConfig({ temperature: Number(event.target.value) || 0 })}
+                  className="mt-1 h-9 w-full rounded-md border border-input bg-white px-3 text-sm"
+                />
+              </label>
+              <label className="block text-xs font-medium text-slate-700">
+                Max tokens
+                <input
+                  aria-label="LLM max tokens"
+                  autoComplete="off"
+                  min={0}
+                  name="llm-max-tokens"
+                  step={100}
+                  type="number"
+                  value={llmConfig.maxTokens || ""}
+                  onChange={(event) => updateLLMConfig({ maxTokens: Number(event.target.value) || 0 })}
+                  className="mt-1 h-9 w-full rounded-md border border-input bg-white px-3 text-sm"
+                  placeholder="1200"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="flex items-center gap-2 rounded-md border border-border p-3 text-sm">
             <input
@@ -1482,7 +1702,7 @@ function SettingsModal({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => onSave(config)}>Save</Button>
+          <Button onClick={() => onSave(config, llmConfig)}>Save</Button>
         </div>
       </div>
     </Modal>

@@ -17,17 +17,28 @@ type SyncStore struct {
 }
 
 type SyncDocument struct {
-	Version int                        `json:"version"`
-	Skills  map[string]SyncSkillRecord `json:"skills"`
+	Version  int                        `json:"version"`
+	LLM      SyncLLMConfig              `json:"llm,omitempty"`
+	Profiles map[string]SkillProfile    `json:"profiles,omitempty"`
+	Skills   map[string]SyncSkillRecord `json:"skills"`
+}
+
+type SyncLLMConfig struct {
+	BaseURL     string  `json:"baseUrl,omitempty"`
+	APIKey      string  `json:"apiKey,omitempty"`
+	Model       string  `json:"model,omitempty"`
+	Temperature float64 `json:"temperature,omitempty"`
+	MaxTokens   int     `json:"maxTokens,omitempty"`
 }
 
 type SyncSkillRecord struct {
-	Enabled             bool       `json:"enabled"`
-	TargetName          string     `json:"targetName"`
-	PreviousTargetNames []string   `json:"previousTargetNames,omitempty"`
-	Tags                []string   `json:"tags,omitempty"`
-	UpdatedAt           string     `json:"updatedAt,omitempty"`
-	Source              SyncSource `json:"source"`
+	Enabled             bool          `json:"enabled"`
+	TargetName          string        `json:"targetName"`
+	PreviousTargetNames []string      `json:"previousTargetNames,omitempty"`
+	Tags                []string      `json:"tags,omitempty"`
+	Profile             *SkillProfile `json:"profile,omitempty"`
+	UpdatedAt           string        `json:"updatedAt,omitempty"`
+	Source              SyncSource    `json:"source"`
 }
 
 type SyncSource struct {
@@ -113,10 +124,55 @@ func (s *SyncStore) DeleteSkill(syncID string) error {
 	return s.Save(document)
 }
 
+func (s *SyncStore) SaveLLMConfig(config SyncLLMConfig) error {
+	document, err := s.Load()
+	if err != nil {
+		return err
+	}
+	document.LLM = normalizeSyncLLMConfig(config)
+	return s.Save(document)
+}
+
+func (s *SyncStore) UpsertSkillProfile(syncID string, profile SkillProfile) error {
+	syncID = strings.TrimSpace(syncID)
+	if syncID == "" {
+		return errors.New("skill profile sync id is required")
+	}
+	document, err := s.Load()
+	if err != nil {
+		return err
+	}
+	profilePointer := normalizeSkillProfile(&profile)
+	if profilePointer == nil {
+		return errors.New("skill profile is empty")
+	}
+	if document.Profiles == nil {
+		document.Profiles = map[string]SkillProfile{}
+	}
+	document.Profiles[syncID] = *profilePointer
+	if record, ok := document.Skills[syncID]; ok {
+		record.Profile = profilePointer
+		document.Skills[syncID] = record
+	}
+	return s.Save(document)
+}
+
 func normalizeSyncDocument(document SyncDocument) SyncDocument {
 	document.Version = 1
 	if document.Skills == nil {
 		document.Skills = map[string]SyncSkillRecord{}
+	}
+	document.LLM = normalizeSyncLLMConfig(document.LLM)
+	if document.Profiles == nil {
+		document.Profiles = map[string]SkillProfile{}
+	}
+	for id, profile := range document.Profiles {
+		normalized := normalizeSkillProfile(&profile)
+		if normalized == nil {
+			delete(document.Profiles, id)
+			continue
+		}
+		document.Profiles[id] = *normalized
 	}
 	for id, record := range document.Skills {
 		record = normalizeSyncSkillRecord(record)
@@ -144,7 +200,49 @@ func normalizeSyncSkillRecord(record SyncSkillRecord) SyncSkillRecord {
 	}
 	record.PreviousTargetNames = cleanNameList(record.PreviousTargetNames)
 	record.Tags = cleanSkillTags(record.Tags)
+	record.Profile = normalizeSkillProfile(record.Profile)
 	return record
+}
+
+func normalizeSyncLLMConfig(config SyncLLMConfig) SyncLLMConfig {
+	config.BaseURL = strings.TrimSpace(config.BaseURL)
+	config.APIKey = strings.TrimSpace(config.APIKey)
+	config.Model = strings.TrimSpace(config.Model)
+	if config.Temperature < 0 {
+		config.Temperature = 0
+	}
+	if config.MaxTokens < 0 {
+		config.MaxTokens = 0
+	}
+	return config
+}
+
+func normalizeSkillProfile(profile *SkillProfile) *SkillProfile {
+	if profile == nil {
+		return nil
+	}
+	profile.SummaryZh = strings.TrimSpace(profile.SummaryZh)
+	profile.UseCasesZh = cleanProfileUseCases(profile.UseCasesZh)
+	profile.GeneratedAt = strings.TrimSpace(profile.GeneratedAt)
+	profile.Model = strings.TrimSpace(profile.Model)
+	profile.SourceHash = strings.TrimSpace(profile.SourceHash)
+	profile.Error = strings.TrimSpace(profile.Error)
+	if profile.SummaryZh == "" && len(profile.UseCasesZh) == 0 && profile.Error == "" {
+		return nil
+	}
+	return profile
+}
+
+func cleanProfileUseCases(values []string) []string {
+	cleaned := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		cleaned = append(cleaned, value)
+	}
+	return cleaned
 }
 
 func cleanNameList(values []string) []string {

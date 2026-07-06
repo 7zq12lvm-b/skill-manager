@@ -116,6 +116,7 @@ func (s *Service) ScanWithSync(ctx context.Context, config Config, syncDocument 
 	}
 
 	applySyncDocument(&skills, config, syncDocument, scannedAt)
+	applySyncProfiles(skills, syncDocument)
 	deriveStatuses(skills, config.TargetDirs)
 	sort.Slice(skills, func(i, j int) bool {
 		if skills[i].Name == skills[j].Name {
@@ -540,6 +541,7 @@ func applySyncDocument(skills *[]Skill, config Config, document SyncDocument, sc
 			CanSync:             true,
 			Ref:                 record.Source.Ref,
 			Tags:                append([]string(nil), record.Tags...),
+			Profile:             cloneSkillProfile(record.Profile),
 			Error:               errorMessage,
 			LastScannedAt:       scannedAt,
 		}
@@ -557,6 +559,7 @@ func applySyncRecordToSkill(skill *Skill, syncID string, record SyncSkillRecord,
 	skill.Name = record.TargetName
 	skill.PreviousTargetNames = append([]string(nil), record.PreviousTargetNames...)
 	skill.Tags = append([]string(nil), record.Tags...)
+	skill.Profile = cloneSkillProfile(record.Profile)
 	skill.RefMismatch = record.Source.Ref != "" && currentRef != "" && currentRef != record.Source.Ref
 	skill.Ref = record.Source.Ref
 	skill.CloneURL = record.Source.CloneURL
@@ -566,6 +569,30 @@ func applySyncRecordToSkill(skill *Skill, syncID string, record SyncSkillRecord,
 	if skill.RepoSubpath == "" {
 		skill.RepoSubpath = record.Source.RepoSubpath
 	}
+}
+
+func applySyncProfiles(skills []Skill, document SyncDocument) {
+	if len(document.Profiles) == 0 {
+		return
+	}
+	for index := range skills {
+		syncID := skills[index].SyncID
+		if syncID == "" {
+			continue
+		}
+		if profile, ok := document.Profiles[syncID]; ok {
+			skills[index].Profile = cloneSkillProfile(&profile)
+		}
+	}
+}
+
+func cloneSkillProfile(profile *SkillProfile) *SkillProfile {
+	if profile == nil {
+		return nil
+	}
+	cloned := *profile
+	cloned.UseCasesZh = append([]string(nil), profile.UseCasesZh...)
+	return &cloned
 }
 
 func targetNameForSkill(skill Skill) string {

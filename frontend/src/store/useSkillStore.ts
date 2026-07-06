@@ -11,6 +11,7 @@ import {
   DisableSkill,
   EnableSkill,
   EnableSkillLocalOnly,
+  GenerateSkillProfile,
   GetInventory,
   OpenInVSCode,
   OpenPath,
@@ -24,6 +25,7 @@ import {
   RescanAll,
   ResolveConflict,
   SaveConfig,
+  SaveLLMConfig,
   SaveSkillEnvFile,
   SaveSkillTags,
 } from "../../wailsjs/go/main/App";
@@ -61,6 +63,8 @@ type SkillStore = {
   cloneRepository: (repoId: string, cloneUrl: string, parentDir: string, folderName: string) => Promise<void>;
   resolveConflict: (skillId: string) => Promise<void>;
   saveConfig: (config: skillmgr.Config) => Promise<void>;
+  saveLLMConfig: (config: skillmgr.SyncLLMConfig) => Promise<void>;
+  generateSkillProfile: (skillId: string, force?: boolean) => Promise<void>;
   readSkillEnv: (skillId: string) => Promise<string>;
   saveSkillEnv: (skillId: string, content: string) => Promise<void>;
   saveSkillTags: (skillId: string, tags: string[]) => Promise<void>;
@@ -267,6 +271,16 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
   },
   resolveConflict: async (skillId) => runWithInventory(set, () => ResolveConflict(skillId), "Resolving conflict..."),
   saveConfig: async (config) => runWithInventory(set, () => SaveConfig(config), "Saving settings..."),
+  saveLLMConfig: async (config) => runWithInventory(set, () => SaveLLMConfig(config), "Saving LLM settings..."),
+  generateSkillProfile: async (skillId, force = false) => {
+    set({ error: undefined });
+    try {
+      const result = await GenerateSkillProfile(skillId, force);
+      set({ inventory: result.inventory });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error) });
+    }
+  },
   readSkillEnv: async (skillId) => {
     try {
       return await ReadSkillEnvFile(skillId);

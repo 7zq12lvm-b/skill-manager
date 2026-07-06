@@ -541,6 +541,99 @@ func (a *App) RemoveSkillFromSync(skillID string) (skillmgr.Inventory, error) {
 	return a.inventory, nil
 }
 
+func (a *App) SaveLLMConfig(config skillmgr.SyncLLMConfig) (skillmgr.Inventory, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	store := a.currentSyncStoreLocked()
+	if store == nil {
+		return skillmgr.Inventory{}, errors.New("sync folder is not configured")
+	}
+	if err := store.SaveLLMConfig(config); err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	if err := a.refreshLocked(a.ctx); err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	return a.inventory, nil
+}
+
+func (a *App) GenerateSkillProfile(skillID string, force bool) (skillmgr.SkillProfileResult, error) {
+	a.mu.Lock()
+	skill, err := a.findSkillLocked(skillID)
+	if err != nil {
+		a.mu.Unlock()
+		return skillmgr.SkillProfileResult{}, err
+	}
+	if skill.SyncID == "" {
+		a.mu.Unlock()
+		return skillmgr.SkillProfileResult{}, errors.New("skill does not have a sync identity")
+	}
+	store := a.currentSyncStoreLocked()
+	if store == nil {
+		a.mu.Unlock()
+		return skillmgr.SkillProfileResult{}, errors.New("sync folder is not configured")
+	}
+	document, err := store.Load()
+	if err != nil {
+		a.mu.Unlock()
+		return skillmgr.SkillProfileResult{}, err
+	}
+	llmConfig := document.LLM
+	if !force {
+		if skill.Profile != nil && skill.Profile.SummaryZh != "" && len(skill.Profile.UseCasesZh) > 0 {
+			result := skillmgr.SkillProfileResult{
+				Inventory: a.inventory,
+				Profile:   cloneSkillProfileForApp(skill.Profile),
+				Generated: false,
+				Message:   "Profile loaded from sync cache.",
+			}
+			a.mu.Unlock()
+			return result, nil
+		}
+		if profile, ok := document.Profiles[skill.SyncID]; ok && profile.SummaryZh != "" && len(profile.UseCasesZh) > 0 {
+			result := skillmgr.SkillProfileResult{
+				Inventory: a.inventory,
+				Profile:   cloneSkillProfileForApp(&profile),
+				Generated: false,
+				Message:   "Profile loaded from sync cache.",
+			}
+			a.mu.Unlock()
+			return result, nil
+		}
+	}
+	a.mu.Unlock()
+
+	sourceText, err := skillmgr.SkillSourceText(a.ctx, skill)
+	if err != nil {
+		return skillmgr.SkillProfileResult{}, err
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 90*time.Second)
+	defer cancel()
+	profile, err := skillmgr.GenerateSkillProfile(ctx, skill, llmConfig, sourceText)
+	if err != nil {
+		return skillmgr.SkillProfileResult{}, err
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	store = a.currentSyncStoreLocked()
+	if store == nil {
+		return skillmgr.SkillProfileResult{}, errors.New("sync folder is not configured")
+	}
+	if err := store.UpsertSkillProfile(skill.SyncID, *profile); err != nil {
+		return skillmgr.SkillProfileResult{}, err
+	}
+	if err := a.refreshLocked(a.ctx); err != nil {
+		return skillmgr.SkillProfileResult{}, err
+	}
+	return skillmgr.SkillProfileResult{
+		Inventory: a.inventory,
+		Profile:   cloneSkillProfileForApp(profile),
+		Generated: true,
+		Message:   "Profile generated.",
+	}, nil
+}
+
 func (a *App) DisableSkill(skillID string) (skillmgr.Inventory, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -696,6 +789,7 @@ func (a *App) refreshLocked(ctx context.Context) error {
 	if syncStore != nil {
 		a.inventory.SyncPath = syncStore.Path()
 	}
+	a.inventory.LLMConfig = syncDocument.LLM
 	if syncErr != nil {
 		a.inventory.SyncError = syncErr.Error()
 	}
@@ -838,6 +932,7 @@ func syncRecordForSkill(skill skillmgr.Skill, enabled bool) skillmgr.SyncSkillRe
 		TargetName:          targetName,
 		PreviousTargetNames: append([]string(nil), skill.PreviousTargetNames...),
 		Tags:                append([]string(nil), skill.Tags...),
+		Profile:             cloneSkillProfileForApp(skill.Profile),
 		Source: skillmgr.SyncSource{
 			RepoID:      skill.RepoID,
 			CloneURL:    skill.CloneURL,
@@ -845,6 +940,15 @@ func syncRecordForSkill(skill skillmgr.Skill, enabled bool) skillmgr.SyncSkillRe
 			Ref:         skill.Ref,
 		},
 	}
+}
+
+func cloneSkillProfileForApp(profile *skillmgr.SkillProfile) *skillmgr.SkillProfile {
+	if profile == nil {
+		return nil
+	}
+	cloned := *profile
+	cloned.UseCasesZh = append([]string(nil), profile.UseCasesZh...)
+	return &cloned
 }
 
 func (a *App) disableSyncedSkillLocked(skill skillmgr.Skill) error {

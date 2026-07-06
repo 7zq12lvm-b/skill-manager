@@ -78,6 +78,7 @@ type Inventory struct {
 	SyncConfigured   bool          `json:"syncConfigured"`
 	SyncPath         string        `json:"syncPath,omitempty"`
 	SyncError        string        `json:"syncError,omitempty"`
+	LLMConfig        SyncLLMConfig `json:"llmConfig,omitempty"`
 	LegacyTagMessage string        `json:"legacyTagMessage,omitempty"`
 }
 
@@ -100,6 +101,13 @@ type AdoptSyncResult struct {
 type CloneRepositoryResult struct {
 	Inventory Inventory `json:"inventory"`
 	Message   string    `json:"message"`
+}
+
+type SkillProfileResult struct {
+	Inventory Inventory     `json:"inventory"`
+	Profile   *SkillProfile `json:"profile,omitempty"`
+	Generated bool          `json:"generated"`
+	Message   string        `json:"message,omitempty"`
 }
 
 type SkillSource struct {
@@ -170,7 +178,17 @@ type Skill struct {
 	LastScannedAt       string           `json:"lastScannedAt,omitempty"`
 	ConflictSources     []ConflictSource `json:"conflictSources,omitempty"`
 	Tags                []string         `json:"tags,omitempty"`
+	Profile             *SkillProfile    `json:"profile,omitempty"`
 	Error               string           `json:"error,omitempty"`
+}
+
+type SkillProfile struct {
+	SummaryZh   string   `json:"summaryZh,omitempty"`
+	UseCasesZh  []string `json:"useCasesZh,omitempty"`
+	GeneratedAt string   `json:"generatedAt,omitempty"`
+	Model       string   `json:"model,omitempty"`
+	SourceHash  string   `json:"sourceHash,omitempty"`
+	Error       string   `json:"error,omitempty"`
 }
 
 type SkillTarget struct {

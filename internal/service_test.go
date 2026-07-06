@@ -657,6 +657,47 @@ func TestScanWithSyncMarksAvailableSkillNeedsApply(t *testing.T) {
 	assertSkillStatus(t, inventory, "code-review", StatusNeedsApply)
 }
 
+func TestScanWithSyncAppliesTopLevelProfileWithoutSyncingSkill(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	mustWrite(t, filepath.Join(repo, "skills", "code-review", "SKILL.md"), "# code review\n")
+	bin := filepath.Join(root, "bin")
+	mustMkdir(t, bin)
+	mustWriteMode(t, filepath.Join(bin, "git"), "#!/bin/sh\ncase \"$3 $4\" in\n\"rev-parse --show-toplevel\") printf '%s\\n' \"$TEST_GIT_ROOT\";;\n\"branch --show-current\") printf 'main\\n';;\n\"status --porcelain\") exit 0;;\n*) exit 1;;\nesac\n", 0o755)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TEST_GIT_ROOT", repo)
+
+	syncID := "example.com/me/repo//skills/code-review"
+	inventory, err := NewService().ScanWithSync(context.Background(), Config{
+		TargetDirs: []string{filepath.Join(root, "target")},
+		Repositories: []RepositoryConfig{{
+			ID:        "example.com/me/repo",
+			RepoID:    "example.com/me/repo",
+			Path:      repo,
+			Enabled:   true,
+			ScanRoots: []string{"."},
+		}},
+	}, SyncDocument{Version: 1, Profiles: map[string]SkillProfile{
+		syncID: {
+			SummaryZh:  "代码审阅助手。",
+			UseCasesZh: []string{"检查 PR 风险。"},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory.Skills) != 1 {
+		t.Fatalf("expected one skill, got %d", len(inventory.Skills))
+	}
+	skill := inventory.Skills[0]
+	if skill.Profile == nil || skill.Profile.SummaryZh != "代码审阅助手。" {
+		t.Fatalf("expected top-level profile to be applied, got %#v", skill.Profile)
+	}
+	if skill.IsSynced || skill.DesiredEnabled != nil || skill.Status != StatusDisabled {
+		t.Fatalf("profile-only skill should remain unsynced disabled, got synced=%v desired=%#v status=%s", skill.IsSynced, skill.DesiredEnabled, skill.Status)
+	}
+}
+
 func assertSkillStatus(t *testing.T, inventory Inventory, name string, status SkillStatus) {
 	t.Helper()
 	for _, skill := range inventory.Skills {
