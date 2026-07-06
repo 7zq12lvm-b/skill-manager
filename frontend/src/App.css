@@ -200,6 +200,12 @@
   color: #66717d;
 }
 
+.status-pill--local-only {
+  border-color: color-mix(in srgb, var(--sm-violet), white 58%);
+  background: color-mix(in srgb, var(--sm-violet), white 90%);
+  color: var(--sm-violet);
+}
+
 .status-pill--conflict {
   border-color: color-mix(in srgb, var(--sm-conflict), white 52%);
   background: var(--sm-conflict-soft);

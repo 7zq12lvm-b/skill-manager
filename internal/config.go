@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type ConfigStore struct {
@@ -67,6 +68,22 @@ func normalizeConfig(config Config) Config {
 			config.Sources[i].ID = sourceID(config.Sources[i].Path)
 		}
 	}
+	config.Sync.Folder = expandHome(strings.TrimSpace(config.Sync.Folder))
+	for i := range config.Repositories {
+		config.Repositories[i].Path = filepath.Clean(expandHome(config.Repositories[i].Path))
+		config.Repositories[i].RepoID = strings.Trim(strings.TrimSpace(config.Repositories[i].RepoID), "/")
+		if config.Repositories[i].ID == "" {
+			config.Repositories[i].ID = config.Repositories[i].RepoID
+		}
+		if config.Repositories[i].RepoID == "" {
+			config.Repositories[i].RepoID = config.Repositories[i].ID
+		}
+		if len(config.Repositories[i].ScanRoots) == 0 {
+			config.Repositories[i].ScanRoots = []string{"."}
+		}
+		config.Repositories[i].ScanRoots = cleanRelativePaths(config.Repositories[i].ScanRoots, []string{"."})
+		config.Repositories[i].IgnorePaths = cleanRelativePaths(config.Repositories[i].IgnorePaths, nil)
+	}
 	return config
 }
 
@@ -84,6 +101,34 @@ func cleanTargetDirs(targetDirs []string) []string {
 	}
 	if len(cleaned) == 0 {
 		return append([]string(nil), defaultTargetDirs...)
+	}
+	return cleaned
+}
+
+func cleanRelativePaths(paths []string, fallback []string) []string {
+	seen := map[string]bool{}
+	cleaned := make([]string, 0, len(paths))
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		path = filepath.Clean(path)
+		if filepath.IsAbs(path) {
+			continue
+		}
+		if path == string(filepath.Separator) {
+			path = "."
+		}
+		path = filepath.ToSlash(path)
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		cleaned = append(cleaned, path)
+	}
+	if len(cleaned) == 0 && fallback != nil {
+		return append([]string(nil), fallback...)
 	}
 	return cleaned
 }

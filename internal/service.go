@@ -22,10 +22,22 @@ func NewService() *Service {
 }
 
 func (s *Service) Scan(ctx context.Context, config Config) (Inventory, error) {
+	return s.ScanWithSync(ctx, config, SyncDocument{})
+}
+
+func (s *Service) ScanWithSync(ctx context.Context, config Config, syncDocument SyncDocument) (Inventory, error) {
 	config = normalizeConfig(config)
+	syncDocument = normalizeSyncDocument(syncDocument)
 	scannedAt := time.Now().Format(time.RFC3339)
+	repositories := make([]Repository, 0, len(config.Repositories))
 	sources := make([]SkillSource, 0, len(config.Sources))
 	skills := make([]Skill, 0)
+
+	for _, repositoryConfig := range config.Repositories {
+		repository, repositorySkills := s.scanRepository(ctx, repositoryConfig, config, scannedAt)
+		repositories = append(repositories, repository)
+		skills = append(skills, repositorySkills...)
+	}
 
 	for _, sourceConfig := range config.Sources {
 		source := SkillSource{
@@ -61,15 +73,18 @@ func (s *Service) Scan(ctx context.Context, config Config) (Inventory, error) {
 			if !hasSkillFile(sourcePath) {
 				continue
 			}
+			targetName := name
 			skill := Skill{
 				ID:            skillID(sourceConfig.ID, name),
 				Name:          name,
+				TargetName:    targetName,
 				SourceID:      sourceConfig.ID,
 				SourceAlias:   displaySourceName(sourceConfig),
 				SourcePath:    sourcePath,
-				TargetPath:    filepath.Join(config.TargetDirs[0], name),
-				SymlinkPath:   filepath.Join(config.TargetDirs[0], name),
+				TargetPath:    filepath.Join(config.TargetDirs[0], targetName),
+				SymlinkPath:   filepath.Join(config.TargetDirs[0], targetName),
 				Status:        StatusDisabled,
+				LocalOnly:     true,
 				LastScannedAt: scannedAt,
 			}
 			attachSkillMetadata(&skill)
@@ -83,6 +98,7 @@ func (s *Service) Scan(ctx context.Context, config Config) (Inventory, error) {
 		sources = append(sources, source)
 	}
 
+	applySyncDocument(&skills, config, syncDocument, scannedAt)
 	deriveStatuses(skills, config.TargetDirs)
 	sort.Slice(skills, func(i, j int) bool {
 		if skills[i].Name == skills[j].Name {
@@ -92,15 +108,102 @@ func (s *Service) Scan(ctx context.Context, config Config) (Inventory, error) {
 	})
 
 	return Inventory{
-		Config:  config,
-		Sources: sources,
-		Skills:  skills,
-		Summary: summarize(skills),
+		Config:         config,
+		Sources:        sources,
+		Repositories:   repositories,
+		Skills:         skills,
+		Summary:        summarize(skills),
+		SyncConfigured: config.Sync.Folder != "",
+		SyncPath:       SyncPathFromFolder(config.Sync.Folder),
 	}, nil
+}
+
+func (s *Service) scanRepository(ctx context.Context, config RepositoryConfig, appConfig Config, scannedAt string) (Repository, []Skill) {
+	repository := Repository{
+		ID:            config.ID,
+		RepoID:        config.RepoID,
+		Path:          config.Path,
+		Alias:         config.Alias,
+		Enabled:       config.Enabled,
+		CloneURL:      config.CloneURL,
+		ScanRoots:     append([]string(nil), config.ScanRoots...),
+		IgnorePaths:   append([]string(nil), config.IgnorePaths...),
+		LastScannedAt: scannedAt,
+	}
+	if !config.Enabled {
+		return repository, nil
+	}
+	gitRoot, ok := gitRepositoryRoot(ctx, config.Path)
+	if !ok {
+		repository.ErrorCount = 1
+		repository.Error = "repository path is not inside a git repository"
+		return repository, nil
+	}
+	repository.IsGitRepo = true
+	if !samePath(gitRoot, config.Path) {
+		repository.Path = gitRoot
+	}
+	repository.CurrentRef = gitCurrentRef(ctx, repository.Path)
+	if dirty, err := gitWorktreeDirty(ctx, repository.Path); err == nil {
+		repository.Dirty = dirty
+	}
+
+	skills := make([]Skill, 0)
+	for _, skillPath := range discoverSkillFolders(repository.Path, config.ScanRoots, config.IgnorePaths) {
+		repoSubpath, err := filepath.Rel(repository.Path, skillPath)
+		if err != nil {
+			continue
+		}
+		repoSubpath = cleanRepoSubpath(repoSubpath)
+		targetName := filepath.Base(repoSubpath)
+		id := syncSkillID(config.RepoID, repoSubpath)
+		if id == "" {
+			id = skillID(config.ID, repoSubpath)
+		}
+		skill := Skill{
+			ID:            id,
+			SyncID:        syncSkillID(config.RepoID, repoSubpath),
+			Name:          targetName,
+			TargetName:    targetName,
+			SourceID:      config.ID,
+			SourceAlias:   displayRepositoryName(config),
+			SourcePath:    skillPath,
+			RepoID:        config.RepoID,
+			RepoPath:      repository.Path,
+			RepoSubpath:   repoSubpath,
+			CloneURL:      config.CloneURL,
+			TargetPath:    filepath.Join(appConfig.TargetDirs[0], targetName),
+			SymlinkPath:   filepath.Join(appConfig.TargetDirs[0], targetName),
+			Status:        StatusDisabled,
+			CanSync:       config.RepoID != "",
+			LocalOnly:     config.RepoID == "",
+			Ref:           repository.CurrentRef,
+			LastScannedAt: scannedAt,
+		}
+		attachSkillMetadata(&skill)
+		validateSkill(&skill, appConfig.Validation)
+		if skill.Manifest != nil && skill.Manifest.Name != "" {
+			skill.DisplayName = skill.Manifest.Name
+		}
+		repository.SkillCount++
+		if len(skill.ValidationErrors) > 0 {
+			repository.ErrorCount++
+		}
+		skills = append(skills, skill)
+	}
+	return repository, skills
 }
 
 func (s *Service) PullSource(ctx context.Context, source SkillSourceConfig) (string, error) {
 	return pullGitRepository(ctx, source.Path)
+}
+
+func (s *Service) PullRepository(ctx context.Context, repository RepositoryConfig) (string, error) {
+	return pullGitRepository(ctx, repository.Path)
+}
+
+func (s *Service) CloneRepository(ctx context.Context, cloneURL, parentDir, folderName string) (string, string, error) {
+	return cloneGitRepository(ctx, cloneURL, parentDir, folderName)
 }
 
 func (s *Service) Enable(_ context.Context, config Config, skill Skill) error {
@@ -145,7 +248,7 @@ func (s *Service) Disable(_ context.Context, config Config, skill Skill) error {
 func (s *Service) ResolveConflict(ctx context.Context, config Config, skill Skill) error {
 	config = normalizeConfig(config)
 	for _, targetDir := range config.TargetDirs {
-		targetPath := filepath.Join(targetDir, skill.Name)
+		targetPath := filepath.Join(targetDir, targetNameForSkill(skill))
 		info, err := os.Lstat(targetPath)
 		if err == nil {
 			if info.Mode()&os.ModeSymlink == 0 {
@@ -162,7 +265,7 @@ func (s *Service) ResolveConflict(ctx context.Context, config Config, skill Skil
 }
 
 func enableInTarget(targetDir string, skill Skill) error {
-	targetPath := filepath.Join(targetDir, skill.Name)
+	targetPath := filepath.Join(targetDir, targetNameForSkill(skill))
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return err
 	}
@@ -187,7 +290,7 @@ func enableInTarget(targetDir string, skill Skill) error {
 }
 
 func disableInTarget(targetDir string, skill Skill) (bool, string, error) {
-	targetPath := filepath.Join(targetDir, skill.Name)
+	targetPath := filepath.Join(targetDir, targetNameForSkill(skill))
 	info, err := os.Lstat(targetPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, "", nil
@@ -203,9 +306,25 @@ func disableInTarget(targetDir string, skill Skill) (bool, string, error) {
 		return false, "", err
 	}
 	if !samePath(currentTarget, skill.SourcePath) {
-		return false, fmt.Sprintf("refusing to remove symlink for %q because it points to %s", skill.Name, currentTarget), nil
+		return false, fmt.Sprintf("refusing to remove symlink for %q because it points to %s", targetNameForSkill(skill), currentTarget), nil
 	}
 	return true, "", os.Remove(targetPath)
+}
+
+func DisableInTargetForApp(targetDirs []string, skill Skill) (bool, []string, error) {
+	removedAny := false
+	var blockers []string
+	for _, targetDir := range targetDirs {
+		removed, blocker, err := disableInTarget(targetDir, skill)
+		if err != nil {
+			return removedAny, blockers, err
+		}
+		removedAny = removedAny || removed
+		if blocker != "" {
+			blockers = append(blockers, blocker)
+		}
+	}
+	return removedAny, blockers, nil
 }
 
 func (s *Service) ReadEnvFile(skill Skill) (string, error) {
@@ -243,13 +362,26 @@ func (s *Service) SaveEnvFile(skill Skill, content string) error {
 func deriveStatuses(skills []Skill, targetDirs []string) {
 	byName := map[string][]int{}
 	for i := range skills {
-		byName[skills[i].Name] = append(byName[skills[i].Name], i)
+		byName[targetNameForSkill(skills[i])] = append(byName[targetNameForSkill(skills[i])], i)
 	}
 
-	for name, indexes := range byName {
+	for _, indexes := range byName {
+		desiredEnabledCount := 0
+		legacyDuplicate := len(indexes) > 1
+		for _, index := range indexes {
+			if skills[index].CanSync || skills[index].IsSynced {
+				legacyDuplicate = false
+			}
+			if skills[index].DesiredEnabled != nil && *skills[index].DesiredEnabled {
+				desiredEnabledCount++
+			}
+		}
 		for _, index := range indexes {
 			skill := &skills[index]
-			targetStates := inspectTargets(name, skill.SourcePath, targetDirs)
+			if skill.TargetName == "" {
+				skill.TargetName = skill.Name
+			}
+			targetStates := inspectTargets(skill.TargetName, skill.SourcePath, targetDirs)
 			skill.TargetStates = targetStates
 			if len(targetStates) > 0 {
 				primary := targetStates[0]
@@ -283,12 +415,32 @@ func deriveStatuses(skills []Skill, targetDirs []string) {
 				skill.Error = targetError
 			} else if len(skill.ValidationErrors) > 0 {
 				skill.Status = StatusInvalid
-			} else if len(indexes) > 1 {
+			} else if skill.Status == StatusMissingSource || skill.Status == StatusMissingPath {
+				continue
+			} else if legacyDuplicate {
 				skill.Status = StatusConflict
+			} else if skill.IsSynced {
+				desired := skill.DesiredEnabled != nil && *skill.DesiredEnabled
+				if desired {
+					if desiredEnabledCount > 1 {
+						skill.Status = StatusConflict
+					} else if activeCount == len(targetStates) {
+						skill.Status = StatusSynced
+					} else if conflictTarget != "" {
+						skill.Status = StatusConflict
+						skill.SymlinkTarget = conflictTarget
+					} else {
+						skill.Status = StatusNeedsApply
+					}
+				} else if activeCount > 0 {
+					skill.Status = StatusNeedsApply
+				} else {
+					skill.Status = StatusDisabled
+				}
 			} else if !hasSymlink {
 				skill.Status = StatusDisabled
-			} else if activeCount == len(targetStates) {
-				skill.Status = StatusSynced
+			} else if activeCount > 0 {
+				skill.Status = StatusLocalOnly
 			} else if conflictTarget != "" {
 				skill.Status = StatusConflict
 				skill.SymlinkTarget = conflictTarget
@@ -297,7 +449,7 @@ func deriveStatuses(skills []Skill, targetDirs []string) {
 			}
 		}
 
-		if len(indexes) > 1 {
+		if legacyDuplicate || desiredEnabledCount > 1 {
 			conflictSources := make([]ConflictSource, 0, len(indexes))
 			for _, index := range indexes {
 				skill := skills[index]
@@ -313,6 +465,90 @@ func deriveStatuses(skills []Skill, targetDirs []string) {
 			}
 		}
 	}
+}
+
+func applySyncDocument(skills *[]Skill, config Config, document SyncDocument, scannedAt string) {
+	if len(document.Skills) == 0 {
+		return
+	}
+	bySyncID := map[string]int{}
+	for i := range *skills {
+		if (*skills)[i].SyncID != "" {
+			bySyncID[(*skills)[i].SyncID] = i
+		}
+	}
+	repositories := map[string]RepositoryConfig{}
+	for _, repository := range config.Repositories {
+		repositories[repository.RepoID] = repository
+	}
+	for id, record := range document.Skills {
+		desired := record.Enabled
+		if index, ok := bySyncID[id]; ok {
+			skill := &(*skills)[index]
+			applySyncRecordToSkill(skill, id, record, &desired)
+			continue
+		}
+		repository, hasRepository := repositories[record.Source.RepoID]
+		sourcePath := ""
+		status := StatusMissingSource
+		errorMessage := "repository is not configured on this machine"
+		if hasRepository {
+			sourcePath = filepath.Join(repository.Path, filepath.FromSlash(record.Source.RepoSubpath))
+			status = StatusMissingPath
+			errorMessage = "SKILL.md was not found at the synced repository path"
+		}
+		skill := Skill{
+			ID:                  id,
+			SyncID:              id,
+			Name:                record.TargetName,
+			TargetName:          record.TargetName,
+			PreviousTargetNames: append([]string(nil), record.PreviousTargetNames...),
+			SourceID:            record.Source.RepoID,
+			SourceAlias:         record.Source.RepoID,
+			SourcePath:          sourcePath,
+			RepoID:              record.Source.RepoID,
+			RepoPath:            repository.Path,
+			RepoSubpath:         record.Source.RepoSubpath,
+			CloneURL:            record.Source.CloneURL,
+			Status:              status,
+			IsSynced:            true,
+			DesiredEnabled:      &desired,
+			CanSync:             true,
+			Ref:                 record.Source.Ref,
+			Tags:                append([]string(nil), record.Tags...),
+			Error:               errorMessage,
+			LastScannedAt:       scannedAt,
+		}
+		*skills = append(*skills, skill)
+	}
+}
+
+func applySyncRecordToSkill(skill *Skill, syncID string, record SyncSkillRecord, desired *bool) {
+	currentRef := skill.Ref
+	skill.ID = syncID
+	skill.SyncID = syncID
+	skill.IsSynced = true
+	skill.DesiredEnabled = desired
+	skill.TargetName = record.TargetName
+	skill.Name = record.TargetName
+	skill.PreviousTargetNames = append([]string(nil), record.PreviousTargetNames...)
+	skill.Tags = append([]string(nil), record.Tags...)
+	skill.RefMismatch = record.Source.Ref != "" && currentRef != "" && currentRef != record.Source.Ref
+	skill.Ref = record.Source.Ref
+	skill.CloneURL = record.Source.CloneURL
+	if skill.RepoID == "" {
+		skill.RepoID = record.Source.RepoID
+	}
+	if skill.RepoSubpath == "" {
+		skill.RepoSubpath = record.Source.RepoSubpath
+	}
+}
+
+func targetNameForSkill(skill Skill) string {
+	if skill.TargetName != "" {
+		return skill.TargetName
+	}
+	return skill.Name
 }
 
 func inspectTargets(name string, sourcePath string, targetDirs []string) []SkillTarget {
@@ -341,6 +577,96 @@ func inspectTargets(name string, sourcePath string, targetDirs []string) []Skill
 		targetStates = append(targetStates, targetState)
 	}
 	return targetStates
+}
+
+func discoverSkillFolders(repoPath string, scanRoots []string, ignorePaths []string) []string {
+	if len(scanRoots) == 0 {
+		scanRoots = []string{"."}
+	}
+	ignoreSet := defaultIgnorePathSet()
+	for _, ignorePath := range ignorePaths {
+		ignorePath = cleanRepoSubpath(ignorePath)
+		if ignorePath != "" {
+			ignoreSet[ignorePath] = true
+		}
+	}
+	found := make([]string, 0)
+	seen := map[string]bool{}
+	for _, scanRoot := range scanRoots {
+		scanRoot = cleanRepoSubpath(scanRoot)
+		rootPath := repoPath
+		if scanRoot != "." {
+			rootPath = filepath.Join(repoPath, filepath.FromSlash(scanRoot))
+		}
+		_ = filepath.WalkDir(rootPath, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if entry.IsDir() {
+				if shouldIgnoreScanDir(repoPath, path, entry.Name(), ignoreSet) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if entry.Name() != "SKILL.md" {
+				return nil
+			}
+			skillPath := filepath.Dir(path)
+			if !seen[skillPath] {
+				seen[skillPath] = true
+				found = append(found, skillPath)
+			}
+			return nil
+		})
+	}
+	sort.Strings(found)
+	return found
+}
+
+func shouldIgnoreScanDir(repoPath, path, name string, ignoreSet map[string]bool) bool {
+	if path == repoPath {
+		return false
+	}
+	if defaultIgnoredDirName(name) {
+		return true
+	}
+	rel, err := filepath.Rel(repoPath, path)
+	if err != nil {
+		return false
+	}
+	rel = cleanRepoSubpath(rel)
+	if ignoreSet[rel] {
+		return true
+	}
+	for ignorePath := range ignoreSet {
+		if ignorePath != "." && strings.HasPrefix(rel, ignorePath+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func defaultIgnorePathSet() map[string]bool {
+	return map[string]bool{
+		".git":         true,
+		"node_modules": true,
+		"vendor":       true,
+		"dist":         true,
+		"build":        true,
+		"target":       true,
+		".venv":        true,
+		"venv":         true,
+		"__pycache__":  true,
+	}
+}
+
+func defaultIgnoredDirName(name string) bool {
+	switch name {
+	case ".git", "node_modules", "vendor", "dist", "build", "target", ".venv", "venv", "__pycache__":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateSkill(skill *Skill, config ValidationConfig) {
@@ -407,9 +733,10 @@ func summarize(skills []Skill) Summary {
 	var summary Summary
 	summary.SkillsFound = len(skills)
 	for _, skill := range skills {
-		switch skill.Status {
-		case StatusSynced:
+		if skill.IsActive {
 			summary.Enabled++
+		}
+		switch skill.Status {
 		case StatusConflict:
 			summary.Conflicts++
 		case StatusInvalid:
@@ -466,6 +793,16 @@ func displaySourceName(source SkillSourceConfig) string {
 		return source.Alias
 	}
 	return filepath.Base(source.Path)
+}
+
+func displayRepositoryName(repository RepositoryConfig) string {
+	if repository.Alias != "" {
+		return repository.Alias
+	}
+	if repository.RepoID != "" {
+		return repository.RepoID
+	}
+	return filepath.Base(repository.Path)
 }
 
 func expandHome(path string) string {

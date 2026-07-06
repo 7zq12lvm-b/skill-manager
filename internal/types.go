@@ -11,20 +11,26 @@ const (
 type SkillStatus string
 
 const (
-	StatusSynced   SkillStatus = "synced"
-	StatusDisabled SkillStatus = "disabled"
-	StatusConflict SkillStatus = "conflict"
-	StatusInvalid  SkillStatus = "invalid"
-	StatusMissing  SkillStatus = "missing"
-	StatusSyncing  SkillStatus = "syncing"
-	StatusError    SkillStatus = "error"
+	StatusSynced        SkillStatus = "synced"
+	StatusDisabled      SkillStatus = "disabled"
+	StatusConflict      SkillStatus = "conflict"
+	StatusInvalid       SkillStatus = "invalid"
+	StatusMissing       SkillStatus = "missing"
+	StatusMissingSource SkillStatus = "missing-source"
+	StatusMissingPath   SkillStatus = "missing-path"
+	StatusNeedsApply    SkillStatus = "needs-apply"
+	StatusLocalOnly     SkillStatus = "local-only"
+	StatusSyncing       SkillStatus = "syncing"
+	StatusError         SkillStatus = "error"
 )
 
 type Config struct {
 	TargetDirs       []string            `json:"targetDirs"`
 	Sources          []SkillSourceConfig `json:"sources"`
+	Repositories     []RepositoryConfig  `json:"repositories,omitempty"`
 	Validation       ValidationConfig    `json:"validation"`
 	Scan             ScanConfig          `json:"scan"`
+	Sync             SyncConfig          `json:"sync"`
 	ConflictHandling string              `json:"conflictHandling"`
 	SourcePriority   []string            `json:"sourcePriority"`
 }
@@ -34,6 +40,22 @@ type SkillSourceConfig struct {
 	Path    string `json:"path"`
 	Alias   string `json:"alias,omitempty"`
 	Enabled bool   `json:"enabled"`
+}
+
+type RepositoryConfig struct {
+	ID          string   `json:"id"`
+	RepoID      string   `json:"repoId"`
+	Path        string   `json:"path"`
+	Alias       string   `json:"alias,omitempty"`
+	Enabled     bool     `json:"enabled"`
+	CloneURL    string   `json:"cloneUrl,omitempty"`
+	ScanRoots   []string `json:"scanRoots,omitempty"`
+	IgnorePaths []string `json:"ignorePaths,omitempty"`
+}
+
+type SyncConfig struct {
+	Folder        string `json:"folder,omitempty"`
+	LastAppliedAt string `json:"lastAppliedAt,omitempty"`
 }
 
 type ValidationConfig struct {
@@ -48,13 +70,34 @@ type ScanConfig struct {
 }
 
 type Inventory struct {
-	Config  Config        `json:"config"`
-	Sources []SkillSource `json:"sources"`
-	Skills  []Skill       `json:"skills"`
-	Summary Summary       `json:"summary"`
+	Config           Config        `json:"config"`
+	Sources          []SkillSource `json:"sources"`
+	Repositories     []Repository  `json:"repositories,omitempty"`
+	Skills           []Skill       `json:"skills"`
+	Summary          Summary       `json:"summary"`
+	SyncConfigured   bool          `json:"syncConfigured"`
+	SyncPath         string        `json:"syncPath,omitempty"`
+	SyncError        string        `json:"syncError,omitempty"`
+	LegacyTagMessage string        `json:"legacyTagMessage,omitempty"`
 }
 
 type PullSourceResult struct {
+	Inventory Inventory `json:"inventory"`
+	Message   string    `json:"message"`
+}
+
+type ApplySyncResult struct {
+	Inventory Inventory `json:"inventory"`
+	Message   string    `json:"message"`
+}
+
+type AdoptSyncResult struct {
+	Inventory Inventory `json:"inventory"`
+	Adopted   int       `json:"adopted"`
+	Skipped   []string  `json:"skipped,omitempty"`
+}
+
+type CloneRepositoryResult struct {
 	Inventory Inventory `json:"inventory"`
 	Message   string    `json:"message"`
 }
@@ -72,30 +115,62 @@ type SkillSource struct {
 	Error         string `json:"error,omitempty"`
 }
 
+type Repository struct {
+	ID            string   `json:"id"`
+	RepoID        string   `json:"repoId"`
+	Path          string   `json:"path"`
+	Alias         string   `json:"alias,omitempty"`
+	Enabled       bool     `json:"enabled"`
+	CloneURL      string   `json:"cloneUrl,omitempty"`
+	ScanRoots     []string `json:"scanRoots,omitempty"`
+	IgnorePaths   []string `json:"ignorePaths,omitempty"`
+	SkillCount    int      `json:"skillCount"`
+	LastScannedAt string   `json:"lastScannedAt,omitempty"`
+	IsGitRepo     bool     `json:"isGitRepo"`
+	CurrentRef    string   `json:"currentRef,omitempty"`
+	Dirty         bool     `json:"dirty"`
+	ErrorCount    int      `json:"errorCount"`
+	Error         string   `json:"error,omitempty"`
+}
+
 type Skill struct {
-	ID               string           `json:"id"`
-	Name             string           `json:"name"`
-	SourceID         string           `json:"sourceId"`
-	SourceAlias      string           `json:"sourceAlias,omitempty"`
-	SourcePath       string           `json:"sourcePath"`
-	TargetPath       string           `json:"targetPath,omitempty"`
-	SymlinkPath      string           `json:"symlinkPath,omitempty"`
-	TargetStates     []SkillTarget    `json:"targetStates,omitempty"`
-	Status           SkillStatus      `json:"status"`
-	HasSymlink       bool             `json:"hasSymlink"`
-	SymlinkTarget    string           `json:"symlinkTarget,omitempty"`
-	IsActive         bool             `json:"isActive"`
-	ValidationErrors []string         `json:"validationErrors,omitempty"`
-	Files            []string         `json:"files,omitempty"`
-	Description      string           `json:"description,omitempty"`
-	Manifest         *SkillManifest   `json:"manifest,omitempty"`
-	PreviewFile      string           `json:"previewFile,omitempty"`
-	Preview          string           `json:"preview,omitempty"`
-	UpdatedAt        string           `json:"updatedAt,omitempty"`
-	LastScannedAt    string           `json:"lastScannedAt,omitempty"`
-	ConflictSources  []ConflictSource `json:"conflictSources,omitempty"`
-	Tags             []string         `json:"tags,omitempty"`
-	Error            string           `json:"error,omitempty"`
+	ID                  string           `json:"id"`
+	Name                string           `json:"name"`
+	DisplayName         string           `json:"displayName,omitempty"`
+	SourceID            string           `json:"sourceId"`
+	SourceAlias         string           `json:"sourceAlias,omitempty"`
+	SourcePath          string           `json:"sourcePath"`
+	RepoID              string           `json:"repoId,omitempty"`
+	RepoPath            string           `json:"repoPath,omitempty"`
+	RepoSubpath         string           `json:"repoSubpath,omitempty"`
+	CloneURL            string           `json:"cloneUrl,omitempty"`
+	SyncID              string           `json:"syncId,omitempty"`
+	TargetName          string           `json:"targetName,omitempty"`
+	PreviousTargetNames []string         `json:"previousTargetNames,omitempty"`
+	TargetPath          string           `json:"targetPath,omitempty"`
+	SymlinkPath         string           `json:"symlinkPath,omitempty"`
+	TargetStates        []SkillTarget    `json:"targetStates,omitempty"`
+	Status              SkillStatus      `json:"status"`
+	HasSymlink          bool             `json:"hasSymlink"`
+	SymlinkTarget       string           `json:"symlinkTarget,omitempty"`
+	IsActive            bool             `json:"isActive"`
+	IsSynced            bool             `json:"isSynced"`
+	DesiredEnabled      *bool            `json:"desiredEnabled,omitempty"`
+	CanSync             bool             `json:"canSync"`
+	LocalOnly           bool             `json:"localOnly"`
+	Ref                 string           `json:"ref,omitempty"`
+	RefMismatch         bool             `json:"refMismatch"`
+	ValidationErrors    []string         `json:"validationErrors,omitempty"`
+	Files               []string         `json:"files,omitempty"`
+	Description         string           `json:"description,omitempty"`
+	Manifest            *SkillManifest   `json:"manifest,omitempty"`
+	PreviewFile         string           `json:"previewFile,omitempty"`
+	Preview             string           `json:"preview,omitempty"`
+	UpdatedAt           string           `json:"updatedAt,omitempty"`
+	LastScannedAt       string           `json:"lastScannedAt,omitempty"`
+	ConflictSources     []ConflictSource `json:"conflictSources,omitempty"`
+	Tags                []string         `json:"tags,omitempty"`
+	Error               string           `json:"error,omitempty"`
 }
 
 type SkillTarget struct {

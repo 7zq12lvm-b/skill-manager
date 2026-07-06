@@ -1,122 +1,16 @@
 export namespace skillmgr {
-	
-	export class ScanConfig {
-	    autoRescanOnStartup: boolean;
-	    watchSourceFolders: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new ScanConfig(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.autoRescanOnStartup = source["autoRescanOnStartup"];
-	        this.watchSourceFolders = source["watchSourceFolders"];
-	    }
-	}
-	export class ValidationConfig {
-	    mode: string;
-	    requiredFiles: string[];
-	    showInvalid: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new ValidationConfig(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.mode = source["mode"];
-	        this.requiredFiles = source["requiredFiles"];
-	        this.showInvalid = source["showInvalid"];
-	    }
-	}
-	export class SkillSourceConfig {
-	    id: string;
-	    path: string;
-	    alias?: string;
-	    enabled: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new SkillSourceConfig(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.path = source["path"];
-	        this.alias = source["alias"];
-	        this.enabled = source["enabled"];
-	    }
-	}
-	export class Config {
-	    targetDirs: string[];
-	    sources: SkillSourceConfig[];
-	    validation: ValidationConfig;
-	    scan: ScanConfig;
-	    conflictHandling: string;
-	    sourcePriority: string[];
-	
-	    static createFrom(source: any = {}) {
-	        return new Config(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.targetDirs = source["targetDirs"];
-	        this.sources = this.convertValues(source["sources"], SkillSourceConfig);
-	        this.validation = this.convertValues(source["validation"], ValidationConfig);
-	        this.scan = this.convertValues(source["scan"], ScanConfig);
-	        this.conflictHandling = source["conflictHandling"];
-	        this.sourcePriority = source["sourcePriority"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class ConflictSource {
-	    skillId: string;
-	    sourceId: string;
-	    sourcePath: string;
-	    status: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new ConflictSource(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.skillId = source["skillId"];
-	        this.sourceId = source["sourceId"];
-	        this.sourcePath = source["sourcePath"];
-	        this.status = source["status"];
-	    }
-	}
+
 	export class Summary {
 	    skillsFound: number;
 	    enabled: number;
 	    conflicts: number;
 	    invalid: number;
 	    errors: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Summary(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.skillsFound = source["skillsFound"];
@@ -124,6 +18,24 @@ export namespace skillmgr {
 	        this.conflicts = source["conflicts"];
 	        this.invalid = source["invalid"];
 	        this.errors = source["errors"];
+	    }
+	}
+	export class ConflictSource {
+	    skillId: string;
+	    sourceId: string;
+	    sourcePath: string;
+	    status: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ConflictSource(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.skillId = source["skillId"];
+	        this.sourceId = source["sourceId"];
+	        this.sourcePath = source["sourcePath"];
+	        this.status = source["status"];
 	    }
 	}
 	export class SkillManifest {
@@ -138,11 +50,11 @@ export namespace skillmgr {
 	    userInvocable?: boolean;
 	    argumentHint?: string;
 	    arguments?: any;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SkillManifest(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -166,11 +78,11 @@ export namespace skillmgr {
 	    symlinkTarget?: string;
 	    isActive: boolean;
 	    error?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SkillTarget(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.targetDir = source["targetDir"];
@@ -185,9 +97,17 @@ export namespace skillmgr {
 	export class Skill {
 	    id: string;
 	    name: string;
+	    displayName?: string;
 	    sourceId: string;
 	    sourceAlias?: string;
 	    sourcePath: string;
+	    repoId?: string;
+	    repoPath?: string;
+	    repoSubpath?: string;
+	    cloneUrl?: string;
+	    syncId?: string;
+	    targetName?: string;
+	    previousTargetNames?: string[];
 	    targetPath?: string;
 	    symlinkPath?: string;
 	    targetStates?: SkillTarget[];
@@ -195,6 +115,12 @@ export namespace skillmgr {
 	    hasSymlink: boolean;
 	    symlinkTarget?: string;
 	    isActive: boolean;
+	    isSynced: boolean;
+	    desiredEnabled?: boolean;
+	    canSync: boolean;
+	    localOnly: boolean;
+	    ref?: string;
+	    refMismatch: boolean;
 	    validationErrors?: string[];
 	    files?: string[];
 	    description?: string;
@@ -206,18 +132,26 @@ export namespace skillmgr {
 	    conflictSources?: ConflictSource[];
 	    tags?: string[];
 	    error?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Skill(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
+	        this.displayName = source["displayName"];
 	        this.sourceId = source["sourceId"];
 	        this.sourceAlias = source["sourceAlias"];
 	        this.sourcePath = source["sourcePath"];
+	        this.repoId = source["repoId"];
+	        this.repoPath = source["repoPath"];
+	        this.repoSubpath = source["repoSubpath"];
+	        this.cloneUrl = source["cloneUrl"];
+	        this.syncId = source["syncId"];
+	        this.targetName = source["targetName"];
+	        this.previousTargetNames = source["previousTargetNames"];
 	        this.targetPath = source["targetPath"];
 	        this.symlinkPath = source["symlinkPath"];
 	        this.targetStates = this.convertValues(source["targetStates"], SkillTarget);
@@ -225,6 +159,12 @@ export namespace skillmgr {
 	        this.hasSymlink = source["hasSymlink"];
 	        this.symlinkTarget = source["symlinkTarget"];
 	        this.isActive = source["isActive"];
+	        this.isSynced = source["isSynced"];
+	        this.desiredEnabled = source["desiredEnabled"];
+	        this.canSync = source["canSync"];
+	        this.localOnly = source["localOnly"];
+	        this.ref = source["ref"];
+	        this.refMismatch = source["refMismatch"];
 	        this.validationErrors = source["validationErrors"];
 	        this.files = source["files"];
 	        this.description = source["description"];
@@ -237,7 +177,7 @@ export namespace skillmgr {
 	        this.tags = source["tags"];
 	        this.error = source["error"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -256,6 +196,46 @@ export namespace skillmgr {
 		    return a;
 		}
 	}
+	export class Repository {
+	    id: string;
+	    repoId: string;
+	    path: string;
+	    alias?: string;
+	    enabled: boolean;
+	    cloneUrl?: string;
+	    scanRoots?: string[];
+	    ignorePaths?: string[];
+	    skillCount: number;
+	    lastScannedAt?: string;
+	    isGitRepo: boolean;
+	    currentRef?: string;
+	    dirty: boolean;
+	    errorCount: number;
+	    error?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new Repository(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.repoId = source["repoId"];
+	        this.path = source["path"];
+	        this.alias = source["alias"];
+	        this.enabled = source["enabled"];
+	        this.cloneUrl = source["cloneUrl"];
+	        this.scanRoots = source["scanRoots"];
+	        this.ignorePaths = source["ignorePaths"];
+	        this.skillCount = source["skillCount"];
+	        this.lastScannedAt = source["lastScannedAt"];
+	        this.isGitRepo = source["isGitRepo"];
+	        this.currentRef = source["currentRef"];
+	        this.dirty = source["dirty"];
+	        this.errorCount = source["errorCount"];
+	        this.error = source["error"];
+	    }
+	}
 	export class SkillSource {
 	    id: string;
 	    path: string;
@@ -267,11 +247,11 @@ export namespace skillmgr {
 	    lastScannedAt?: string;
 	    errorCount: number;
 	    error?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new SkillSource(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -286,24 +266,120 @@ export namespace skillmgr {
 	        this.error = source["error"];
 	    }
 	}
-	export class Inventory {
-	    config: Config;
-	    sources: SkillSource[];
-	    skills: Skill[];
-	    summary: Summary;
-	
+	export class SyncConfig {
+	    folder?: string;
+	    lastAppliedAt?: string;
+
 	    static createFrom(source: any = {}) {
-	        return new Inventory(source);
+	        return new SyncConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.config = this.convertValues(source["config"], Config);
-	        this.sources = this.convertValues(source["sources"], SkillSource);
-	        this.skills = this.convertValues(source["skills"], Skill);
-	        this.summary = this.convertValues(source["summary"], Summary);
+	        this.folder = source["folder"];
+	        this.lastAppliedAt = source["lastAppliedAt"];
 	    }
-	
+	}
+	export class ScanConfig {
+	    autoRescanOnStartup: boolean;
+	    watchSourceFolders: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new ScanConfig(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.autoRescanOnStartup = source["autoRescanOnStartup"];
+	        this.watchSourceFolders = source["watchSourceFolders"];
+	    }
+	}
+	export class ValidationConfig {
+	    mode: string;
+	    requiredFiles: string[];
+	    showInvalid: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new ValidationConfig(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mode = source["mode"];
+	        this.requiredFiles = source["requiredFiles"];
+	        this.showInvalid = source["showInvalid"];
+	    }
+	}
+	export class RepositoryConfig {
+	    id: string;
+	    repoId: string;
+	    path: string;
+	    alias?: string;
+	    enabled: boolean;
+	    cloneUrl?: string;
+	    scanRoots?: string[];
+	    ignorePaths?: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new RepositoryConfig(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.repoId = source["repoId"];
+	        this.path = source["path"];
+	        this.alias = source["alias"];
+	        this.enabled = source["enabled"];
+	        this.cloneUrl = source["cloneUrl"];
+	        this.scanRoots = source["scanRoots"];
+	        this.ignorePaths = source["ignorePaths"];
+	    }
+	}
+	export class SkillSourceConfig {
+	    id: string;
+	    path: string;
+	    alias?: string;
+	    enabled: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new SkillSourceConfig(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.path = source["path"];
+	        this.alias = source["alias"];
+	        this.enabled = source["enabled"];
+	    }
+	}
+	export class Config {
+	    targetDirs: string[];
+	    sources: SkillSourceConfig[];
+	    repositories?: RepositoryConfig[];
+	    validation: ValidationConfig;
+	    scan: ScanConfig;
+	    sync: SyncConfig;
+	    conflictHandling: string;
+	    sourcePriority: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new Config(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.targetDirs = source["targetDirs"];
+	        this.sources = this.convertValues(source["sources"], SkillSourceConfig);
+	        this.repositories = this.convertValues(source["repositories"], RepositoryConfig);
+	        this.validation = this.convertValues(source["validation"], ValidationConfig);
+	        this.scan = this.convertValues(source["scan"], ScanConfig);
+	        this.sync = this.convertValues(source["sync"], SyncConfig);
+	        this.conflictHandling = source["conflictHandling"];
+	        this.sourcePriority = source["sourcePriority"];
+	    }
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -322,20 +398,100 @@ export namespace skillmgr {
 		    return a;
 		}
 	}
-	export class PullSourceResult {
+	export class Inventory {
+	    config: Config;
+	    sources: SkillSource[];
+	    repositories?: Repository[];
+	    skills: Skill[];
+	    summary: Summary;
+	    syncConfigured: boolean;
+	    syncPath?: string;
+	    syncError?: string;
+	    legacyTagMessage?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new Inventory(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.config = this.convertValues(source["config"], Config);
+	        this.sources = this.convertValues(source["sources"], SkillSource);
+	        this.repositories = this.convertValues(source["repositories"], Repository);
+	        this.skills = this.convertValues(source["skills"], Skill);
+	        this.summary = this.convertValues(source["summary"], Summary);
+	        this.syncConfigured = source["syncConfigured"];
+	        this.syncPath = source["syncPath"];
+	        this.syncError = source["syncError"];
+	        this.legacyTagMessage = source["legacyTagMessage"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class AdoptSyncResult {
+	    inventory: Inventory;
+	    adopted: number;
+	    skipped?: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new AdoptSyncResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.inventory = this.convertValues(source["inventory"], Inventory);
+	        this.adopted = source["adopted"];
+	        this.skipped = source["skipped"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ApplySyncResult {
 	    inventory: Inventory;
 	    message: string;
-	
+
 	    static createFrom(source: any = {}) {
-	        return new PullSourceResult(source);
+	        return new ApplySyncResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.inventory = this.convertValues(source["inventory"], Inventory);
 	        this.message = source["message"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -354,13 +510,83 @@ export namespace skillmgr {
 		    return a;
 		}
 	}
-	
-	
-	
-	
-	
-	
-	
+	export class CloneRepositoryResult {
+	    inventory: Inventory;
+	    message: string;
+
+	    static createFrom(source: any = {}) {
+	        return new CloneRepositoryResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.inventory = this.convertValues(source["inventory"], Inventory);
+	        this.message = source["message"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+
+
+	export class PullSourceResult {
+	    inventory: Inventory;
+	    message: string;
+
+	    static createFrom(source: any = {}) {
+	        return new PullSourceResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.inventory = this.convertValues(source["inventory"], Inventory);
+	        this.message = source["message"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+
+
+
+
+
+
+
+
+
 
 }
 

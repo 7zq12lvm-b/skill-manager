@@ -68,6 +68,17 @@ func (s *SkillTagStore) Save(document SkillTagDocument) error {
 	return os.WriteFile(s.path, data, 0o644)
 }
 
+func (s *SkillTagStore) Remove() error {
+	if s == nil || s.path == "" {
+		return nil
+	}
+	if err := os.Remove(s.path); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else {
+		return err
+	}
+}
+
 func (s *SkillTagStore) SetSkillTags(skillName string, tags []string) error {
 	document, err := s.Load()
 	if err != nil {

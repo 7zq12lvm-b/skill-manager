@@ -37,7 +37,7 @@ func TestScanDiscoversFirstLevelSkillsAndDerivesStatuses(t *testing.T) {
 	if inventory.Summary.SkillsFound != 2 {
 		t.Fatalf("expected 2 first-level skills, got %d", inventory.Summary.SkillsFound)
 	}
-	assertSkillStatus(t, inventory, "summarize-pdf", StatusSynced)
+	assertSkillStatus(t, inventory, "summarize-pdf", StatusLocalOnly)
 	assertSkillStatus(t, inventory, "code-review", StatusDisabled)
 }
 
@@ -152,7 +152,7 @@ func TestScanMarksPartiallySyncedSkillAsSyncing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertSkillStatus(t, inventory, "code-review", StatusSyncing)
+	assertSkillStatus(t, inventory, "code-review", StatusLocalOnly)
 	if len(inventory.Skills) != 1 || len(inventory.Skills[0].TargetStates) != 2 {
 		t.Fatalf("expected two target states, got %#v", inventory.Skills)
 	}
@@ -498,6 +498,103 @@ func TestScanMarksSourceInsideGitRepository(t *testing.T) {
 	if inventory.Sources[0].GitRoot != repo {
 		t.Fatalf("expected git root %s, got %s", repo, inventory.Sources[0].GitRoot)
 	}
+}
+
+func TestScanRepositoryDiscoversNestedSkillFiles(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	mustWrite(t, filepath.Join(repo, "skills", "code-review", "SKILL.md"), "# code review\n")
+	mustWrite(t, filepath.Join(repo, "agents", "writing", "summarize-pdf", "SKILL.md"), "# summarize\n")
+	mustWrite(t, filepath.Join(repo, "node_modules", "ignored", "SKILL.md"), "# ignored\n")
+	bin := filepath.Join(root, "bin")
+	mustMkdir(t, bin)
+	mustWriteMode(t, filepath.Join(bin, "git"), "#!/bin/sh\ncase \"$3 $4\" in\n\"rev-parse --show-toplevel\") printf '%s\\n' \"$TEST_GIT_ROOT\";;\n\"branch --show-current\") printf 'main\\n';;\n\"status --porcelain\") exit 0;;\n*) exit 1;;\nesac\n", 0o755)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TEST_GIT_ROOT", repo)
+
+	inventory, err := NewService().Scan(context.Background(), Config{
+		TargetDirs: []string{filepath.Join(root, "target")},
+		Repositories: []RepositoryConfig{{
+			ID:        "example.com/me/repo",
+			RepoID:    "example.com/me/repo",
+			Path:      repo,
+			Enabled:   true,
+			ScanRoots: []string{"."},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if inventory.Summary.SkillsFound != 2 {
+		t.Fatalf("expected two nested skills, got %d", inventory.Summary.SkillsFound)
+	}
+	assertSkillStatus(t, inventory, "code-review", StatusDisabled)
+	assertSkillStatus(t, inventory, "summarize-pdf", StatusDisabled)
+}
+
+func TestScanWithSyncShowsMissingSource(t *testing.T) {
+	root := t.TempDir()
+	enabled := true
+	inventory, err := NewService().ScanWithSync(context.Background(), Config{
+		TargetDirs: []string{filepath.Join(root, "target")},
+	}, SyncDocument{Version: 1, Skills: map[string]SyncSkillRecord{
+		"example.com/me/repo//skills/code-review": {
+			Enabled:    true,
+			TargetName: "code-review",
+			Source: SyncSource{
+				RepoID:      "example.com/me/repo",
+				RepoSubpath: "skills/code-review",
+			},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory.Skills) != 1 {
+		t.Fatalf("expected one synced skill, got %d", len(inventory.Skills))
+	}
+	if inventory.Skills[0].Status != StatusMissingSource {
+		t.Fatalf("expected missing source, got %s", inventory.Skills[0].Status)
+	}
+	if inventory.Skills[0].DesiredEnabled == nil || *inventory.Skills[0].DesiredEnabled != enabled {
+		t.Fatalf("expected desired enabled true, got %#v", inventory.Skills[0].DesiredEnabled)
+	}
+}
+
+func TestScanWithSyncMarksAvailableSkillNeedsApply(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	mustWrite(t, filepath.Join(repo, "skills", "code-review", "SKILL.md"), "# code review\n")
+	bin := filepath.Join(root, "bin")
+	mustMkdir(t, bin)
+	mustWriteMode(t, filepath.Join(bin, "git"), "#!/bin/sh\ncase \"$3 $4\" in\n\"rev-parse --show-toplevel\") printf '%s\\n' \"$TEST_GIT_ROOT\";;\n\"branch --show-current\") printf 'main\\n';;\n\"status --porcelain\") exit 0;;\n*) exit 1;;\nesac\n", 0o755)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TEST_GIT_ROOT", repo)
+
+	inventory, err := NewService().ScanWithSync(context.Background(), Config{
+		TargetDirs: []string{filepath.Join(root, "target")},
+		Repositories: []RepositoryConfig{{
+			ID:        "example.com/me/repo",
+			RepoID:    "example.com/me/repo",
+			Path:      repo,
+			Enabled:   true,
+			ScanRoots: []string{"."},
+		}},
+	}, SyncDocument{Version: 1, Skills: map[string]SyncSkillRecord{
+		"example.com/me/repo//skills/code-review": {
+			Enabled:    true,
+			TargetName: "code-review",
+			Source: SyncSource{
+				RepoID:      "example.com/me/repo",
+				RepoSubpath: "skills/code-review",
+			},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSkillStatus(t, inventory, "code-review", StatusNeedsApply)
 }
 
 func assertSkillStatus(t *testing.T, inventory Inventory, name string, status SkillStatus) {
