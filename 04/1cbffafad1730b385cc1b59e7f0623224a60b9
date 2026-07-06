@@ -1,0 +1,22 @@
+internal/service.go
+  s_8fbd275333a44a::t_68032b253ec7f6 178,578-595
+  s_8fbd275333a44a::t_1b77e1cb70f1c8 596-597
+internal/service_test.go
+  s_8fbd275333a44a::t_e6dfe27c3f3ded 561-595
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "041cbffafad1730b385cc1b59e7f0623224a60b9",
+  "prompts": {},
+  "sessions": {
+    "s_8fbd275333a44a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f36ab-c2ab-78d1-a502-2f6a451ed944",
+        "model": "gpt-5.5"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
