@@ -2041,15 +2041,15 @@ function Modal({
   onClose: () => void;
 }) {
   return (
-    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
-      <div className="modal-surface w-full max-w-xl rounded-lg border border-border bg-white shadow-xl">
-        <div className="panel-header flex h-14 items-center justify-between border-b border-border px-5">
-          <h2 className="text-base font-semibold">{title}</h2>
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/35 p-3 sm:items-center sm:p-4">
+      <div className="modal-surface flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-border bg-white shadow-xl sm:max-h-[calc(100dvh-2rem)]">
+        <div className="panel-header flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-5">
+          <h2 className="min-w-0 truncate text-base font-semibold">{title}</h2>
           <IconButton title="Close" onClick={onClose}>
             <X aria-hidden="true" className="h-4 w-4" />
           </IconButton>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="min-h-0 overflow-y-auto p-5">{children}</div>
       </div>
     </div>
   );
