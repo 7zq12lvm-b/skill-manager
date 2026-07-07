@@ -1,0 +1,19 @@
+frontend/src/App.tsx
+  s_8fbd275333a44a::t_f20e49e5586dad 2044-2047,2052
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d0a3ad3d2351512ac9ef9ec7ed07742c1e88e8f2",
+  "prompts": {},
+  "sessions": {
+    "s_8fbd275333a44a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f36ab-c2ab-78d1-a502-2f6a451ed944",
+        "model": "gpt-5.5"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
