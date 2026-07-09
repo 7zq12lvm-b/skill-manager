@@ -327,9 +327,60 @@
 }
 
 .tag-chip {
-  border-color: color-mix(in srgb, var(--sm-link), white 58%) !important;
-  background: var(--sm-link-soft) !important;
-  color: var(--sm-link-dark);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45);
+}
+
+.tag-filter-chip {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45);
+}
+
+.tag-filter-chip:hover,
+.tag-filter-chip--active {
+  filter: saturate(1.12) contrast(1.02);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.5),
+    0 0 0 2px rgb(24 32 51 / 0.08);
+}
+
+.tag-filter-chip--active {
+  outline: 2px solid color-mix(in srgb, currentColor, transparent 72%);
+  outline-offset: 1px;
+}
+
+.file-tree-card {
+  border-color: color-mix(in srgb, var(--sm-line), var(--sm-link) 12%) !important;
+  background: color-mix(in srgb, var(--sm-panel), var(--sm-paper) 24%) !important;
+}
+
+.file-tree-row {
+  display: flex;
+  min-height: 1.9rem;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 0.4rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--sm-line), white 48%);
+  padding-top: 0.35rem;
+  padding-right: 0.65rem;
+  padding-bottom: 0.35rem;
+  color: var(--sm-ink);
+  font-family: "SFMono-Regular", "Cascadia Code", "Liberation Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  text-align: left;
+}
+
+.file-tree-row--button:hover {
+  background: color-mix(in srgb, var(--sm-link-soft), white 55%);
+}
+
+.file-tree-spacer {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: 0 0 auto;
+}
+
+.file-tree-message {
+  border-bottom: 1px solid color-mix(in srgb, var(--sm-line), white 48%);
 }
 
 .code-preview {

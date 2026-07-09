@@ -58,6 +58,10 @@ export function GetInventory() {
   return window['go']['main']['App']['GetInventory']();
 }
 
+export function ListSkillFiles(arg1, arg2) {
+  return window['go']['main']['App']['ListSkillFiles'](arg1, arg2);
+}
+
 export function OpenInVSCode(arg1) {
   return window['go']['main']['App']['OpenInVSCode'](arg1);
 }

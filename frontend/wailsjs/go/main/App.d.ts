@@ -30,6 +30,8 @@ export function GetDebugLogPath():Promise<string>;
 
 export function GetInventory():Promise<skillmgr.Inventory>;
 
+export function ListSkillFiles(arg1:string,arg2:string):Promise<Array<skillmgr.SkillFileEntry>>;
+
 export function OpenInVSCode(arg1:string):Promise<void>;
 
 export function OpenPath(arg1:string):Promise<void>;

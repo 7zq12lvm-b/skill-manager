@@ -182,6 +182,12 @@ type Skill struct {
 	Error               string           `json:"error,omitempty"`
 }
 
+type SkillFileEntry struct {
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+	IsDir bool   `json:"isDir"`
+}
+
 type SkillProfile struct {
 	SummaryZh   string   `json:"summaryZh,omitempty"`
 	UseCasesZh  []string `json:"useCasesZh,omitempty"`

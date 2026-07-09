@@ -144,6 +144,35 @@ func (a *App) GetInventory() (skillmgr.Inventory, error) {
 	return a.inventory, nil
 }
 
+func (a *App) ListSkillFiles(skillID string, relativeDir string) ([]skillmgr.SkillFileEntry, error) {
+	a.debugLogf("ListSkillFiles begin skill=%q dir=%q", skillID, relativeDir)
+	a.mu.Lock()
+	var selected skillmgr.Skill
+	found := false
+	for _, skill := range a.inventory.Skills {
+		if skill.ID == skillID {
+			selected = skill
+			found = true
+			break
+		}
+	}
+	ctx := a.ctx
+	a.mu.Unlock()
+	if !found {
+		return nil, fmt.Errorf("skill not found: %s", skillID)
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	entries, err := a.service.ListSkillFiles(ctx, selected, relativeDir)
+	if err != nil {
+		a.debugLogf("ListSkillFiles error: %v", err)
+		return nil, err
+	}
+	a.debugLogf("ListSkillFiles done skill=%q dir=%q entries=%d", skillID, relativeDir, len(entries))
+	return entries, nil
+}
+
 func (a *App) RescanAll() (skillmgr.Inventory, error) {
 	a.debugLogf("RescanAll begin")
 	a.mu.Lock()

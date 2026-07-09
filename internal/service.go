@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -974,6 +975,74 @@ func (s *Service) attachRepositorySkillMetadata(ctx context.Context, skill *Skil
 	}
 }
 
+func (s *Service) ListSkillFiles(ctx context.Context, skill Skill, relativeDir string) ([]SkillFileEntry, error) {
+	cleanDir, err := cleanSkillRelativeDir(relativeDir)
+	if err != nil {
+		return nil, err
+	}
+	if skill.RepoPath != "" && skill.RepoSubpath != "" {
+		if entries, ok := gitListTreeEntries(ctx, skill.RepoPath, skill.RepoSubpath, cleanDir); ok {
+			return entries, nil
+		}
+	}
+	if skill.SourcePath == "" {
+		return nil, errors.New("skill source path is unavailable")
+	}
+	return listLocalSkillEntries(skill.SourcePath, cleanDir)
+}
+
+func cleanSkillRelativeDir(relativeDir string) (string, error) {
+	relativeDir = strings.TrimSpace(filepath.ToSlash(relativeDir))
+	if relativeDir == "" || relativeDir == "." {
+		return "", nil
+	}
+	cleaned := path.Clean(relativeDir)
+	if cleaned == "." {
+		return "", nil
+	}
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") || strings.HasPrefix(cleaned, "/") {
+		return "", fmt.Errorf("invalid relative directory: %s", relativeDir)
+	}
+	return cleaned, nil
+}
+
+func listLocalSkillEntries(sourcePath string, relativeDir string) ([]SkillFileEntry, error) {
+	sourceAbs, err := filepath.Abs(sourcePath)
+	if err != nil {
+		return nil, err
+	}
+	targetAbs := filepath.Join(sourceAbs, filepath.FromSlash(relativeDir))
+	targetAbs, err = filepath.Abs(targetAbs)
+	if err != nil {
+		return nil, err
+	}
+	rel, err := filepath.Rel(sourceAbs, targetAbs)
+	if err != nil {
+		return nil, err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("invalid relative directory: %s", relativeDir)
+	}
+	dirEntries, err := os.ReadDir(targetAbs)
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]SkillFileEntry, 0, len(dirEntries))
+	for _, entry := range dirEntries {
+		entryPath := entry.Name()
+		if relativeDir != "" {
+			entryPath = path.Join(relativeDir, entry.Name())
+		}
+		entries = append(entries, SkillFileEntry{
+			Name:  entry.Name(),
+			Path:  entryPath,
+			IsDir: entry.IsDir(),
+		})
+	}
+	sortSkillFileEntries(entries)
+	return entries, nil
+}
+
 func validateRepositorySkill(ctx context.Context, skill *Skill, config ValidationConfig) {
 	var required []string
 	switch config.Mode {
@@ -1013,6 +1082,61 @@ func gitListTreeNames(ctx context.Context, repoPath, repoSubpath string) ([]stri
 	}
 	sort.Strings(files)
 	return files, true
+}
+
+func gitListTreeEntries(ctx context.Context, repoPath, repoSubpath, relativeDir string) ([]SkillFileEntry, bool) {
+	if _, err := exec.LookPath("git"); err != nil {
+		return nil, false
+	}
+	objectPath := cleanRepoSubpath(repoSubpath)
+	if relativeDir != "" {
+		if objectPath == "." {
+			objectPath = relativeDir
+		} else {
+			objectPath = objectPath + "/" + relativeDir
+		}
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "ls-tree", "-z", "HEAD:"+objectPath)
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	if err := cmd.Run(); err != nil {
+		return nil, false
+	}
+	entries := make([]SkillFileEntry, 0)
+	for _, rawEntry := range bytes.Split(output.Bytes(), []byte{0}) {
+		if len(rawEntry) == 0 {
+			continue
+		}
+		metadata, rawName, ok := bytes.Cut(rawEntry, []byte{'\t'})
+		if !ok {
+			continue
+		}
+		fields := strings.Fields(string(metadata))
+		if len(fields) < 2 {
+			continue
+		}
+		name := string(rawName)
+		entryPath := name
+		if relativeDir != "" {
+			entryPath = path.Join(relativeDir, name)
+		}
+		entries = append(entries, SkillFileEntry{
+			Name:  name,
+			Path:  entryPath,
+			IsDir: fields[1] == "tree",
+		})
+	}
+	sortSkillFileEntries(entries)
+	return entries, true
+}
+
+func sortSkillFileEntries(entries []SkillFileEntry) {
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].IsDir != entries[j].IsDir {
+			return entries[i].IsDir
+		}
+		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
+	})
 }
 
 func gitShowFile(ctx context.Context, repoPath, repoSubpath, file string) (string, bool) {

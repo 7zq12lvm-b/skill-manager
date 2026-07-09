@@ -13,6 +13,7 @@ import {
   EnableSkillLocalOnly,
   GenerateSkillProfile,
   GetInventory,
+  ListSkillFiles,
   OpenInVSCode,
   OpenPath,
   PullRepository,
@@ -68,6 +69,7 @@ type SkillStore = {
   readSkillEnv: (skillId: string) => Promise<string>;
   saveSkillEnv: (skillId: string, content: string) => Promise<void>;
   saveSkillTags: (skillId: string, tags: string[]) => Promise<void>;
+  listSkillFiles: (skillId: string, relativeDir: string) => Promise<skillmgr.SkillFileEntry[]>;
   openInVSCode: (path: string) => Promise<void>;
   openPath: (path: string) => Promise<void>;
   selectSkill: (skillId?: string) => void;
@@ -302,6 +304,15 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
   },
   saveSkillTags: async (skillId, tags) =>
     runWithInventory(set, () => SaveSkillTags(skillId, tags), "Saving tags..."),
+  listSkillFiles: async (skillId, relativeDir) => {
+    try {
+      set({ error: undefined });
+      return await ListSkillFiles(skillId, relativeDir);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error) });
+      return [];
+    }
+  },
   openPath: async (path) => {
     try {
       await OpenPath(path);
