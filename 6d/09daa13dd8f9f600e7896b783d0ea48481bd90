@@ -1,0 +1,53 @@
+internal/types.go
+  s_fb768bf33d69de::t_b13a6b3da9f839 185-190
+frontend/wailsjs/go/main/App.js
+  s_fb768bf33d69de::t_979802d14c1694 61-64
+frontend/src/App.css
+  s_fb768bf33d69de::t_9c10d4c1add732 330-383
+frontend/wailsjs/go/main/App.d.ts
+  s_fb768bf33d69de::t_ddcb6275775ac2 33-34
+frontend/src/store/useSkillStore.ts
+  s_fb768bf33d69de::t_3a4f23ecb1c196 16,72,307-315
+frontend/src/App.tsx
+  s_fb768bf33d69de::t_fdbf7d8cf31fa1 131,785,1073,1088,1187
+  s_fb768bf33d69de::t_ba29eba48f7329 944,972,2324,2404
+  s_fb768bf33d69de::t_e3132bab13afd7 1664-1668,1688-1705,1711-1715
+  s_fb768bf33d69de::t_54b3a991b1128c 1203-1322,1324-1367,1716
+  s_fb768bf33d69de::t_c9582f5bda4f58 808,822,825-827,1155-1159,1176,1419-1423,1428-1432,1437-1441,1446-1450,1497-1501,1632-1637,1673,1706-1710
+  s_fb768bf33d69de::t_0ff241792fdbc7 370,585,616-662,664-675,701,751
+  s_fb768bf33d69de::t_4eed55f664b2b3 994-1000,1006,1323,1809-1814,1817-1821,1890-1893,1914-1918,1938,2049,2052-2054,2118,2140,2143-2147,2195,2198,2238,2241
+  s_fb768bf33d69de::t_10ac5b40f85fdb 2312
+  s_fb768bf33d69de::t_efff28b717ce33 154,178-198,205,213,215,271-277
+  s_fb768bf33d69de::t_1b2b8082878919 5,10,12,68,74-76,80-82,84-93
+  s_fb768bf33d69de::t_183dfbbfac214f 1,391-396,400-405,411-415,420-423,426-431,435,444-449,465,475,507,510,514-518,524,543,572,575,578,586,606-611,722,766
+  s_fb768bf33d69de::t_35ef2e5b4b6515 2271
+  s_fb768bf33d69de::t_6058fb86d5c063 278,1717,2456-2467
+  s_fb768bf33d69de::t_05bdb83fb06d7f 279
+  s_fb768bf33d69de::t_2f88a596a61b67 1718
+main.go
+  s_fb768bf33d69de::t_cb08a8a61f696c 9,21,24
+app.go
+  s_fb768bf33d69de::t_0ed3202f9e6fb5 147-175
+internal/service.go
+  s_fb768bf33d69de::t_6016b7dc0ee14a 14,978-1045,1087-1140
+  s_fb768bf33d69de::t_ff7d9565415803 1141
+frontend/wailsjs/go/models.ts
+  s_fb768bf33d69de::t_9062f072571675 630-633,635-637,639-645
+  s_fb768bf33d69de::t_034d37cf04e019 634,638
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "6d09daa13dd8f9f600e7896b783d0ea48481bd90",
+  "prompts": {},
+  "sessions": {
+    "s_fb768bf33d69de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f45b7-c5a9-7e50-9541-5735c936dda3",
+        "model": "gpt-5.5"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
