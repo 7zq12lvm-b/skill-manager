@@ -1,0 +1,21 @@
+docs/superpowers/specs/2026-07-10-shared-source-catalog-design.md
+  s_fb768bf33d69de::t_4e551e4f6f0ca2 12,37,43,47,49-57,63-84,86,88,119,121
+  s_fb768bf33d69de::t_10ac940ee175fd 13
+  s_fb768bf33d69de::t_1e07b4c8ea6fd7 85,87,89-94,122-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "0e5057c3e8524b4c5ae65e908892a078dfd7a36f",
+  "prompts": {},
+  "sessions": {
+    "s_fb768bf33d69de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f45b7-c5a9-7e50-9541-5735c936dda3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
