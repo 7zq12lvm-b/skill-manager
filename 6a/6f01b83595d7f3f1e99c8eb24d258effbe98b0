@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-07-10-responsive-workbench-design.md
+  s_fb768bf33d69de::t_6ea2b130e1da73 1-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "6a6f01b83595d7f3f1e99c8eb24d258effbe98b0",
+  "prompts": {},
+  "sessions": {
+    "s_fb768bf33d69de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f45b7-c5a9-7e50-9541-5735c936dda3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
