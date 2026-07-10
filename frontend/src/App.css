@@ -100,6 +100,62 @@
   border-top: 1px solid rgb(255 255 255 / 0.8);
 }
 
+.repository-drawer-backdrop {
+  backdrop-filter: blur(1px);
+}
+
+.repository-drawer {
+  width: min(340px, calc(100vw - 3rem));
+  border-right: 1px solid var(--sm-line);
+  animation: repository-drawer-enter 150ms ease-out;
+}
+
+@keyframes repository-drawer-enter {
+  from {
+    transform: translateX(-16px);
+    opacity: 0.72;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.compact-workbench-tabs {
+  border-color: var(--sm-line);
+  background: color-mix(in srgb, var(--sm-panel), var(--sm-paper) 24%);
+}
+
+.compact-workbench-tab {
+  display: inline-flex;
+  height: 2.25rem;
+  min-width: 5.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 0.45rem;
+  padding: 0 0.75rem;
+  color: var(--sm-ink-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.compact-workbench-tab:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--sm-link-soft), white 58%);
+}
+
+.compact-workbench-tab--active {
+  border-color: color-mix(in srgb, var(--sm-link), white 50%);
+  background: var(--sm-link-soft);
+  color: var(--sm-link-dark);
+}
+
+.compact-workbench-tab:disabled {
+  opacity: 0.45;
+}
+
 .workbench-panel {
   border-color: var(--sm-line);
   background: var(--sm-panel);
@@ -481,10 +537,21 @@ textarea:focus-visible {
   border-color: var(--sm-link) !important;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 1199px) {
   .route-caption,
   .sync-route {
+    display: none !important;
+  }
+}
+
+@media (max-width: 849px) {
+  .topbar-command-label {
     display: none;
+  }
+
+  .app-topbar {
+    gap: 0.6rem;
+    padding: 0.65rem 0.75rem;
   }
 
   .brand-title {

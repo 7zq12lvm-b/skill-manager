@@ -18,10 +18,12 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "Skill Manager",
-		Width:  1024,
-		Height: 768,
-		Mac:    &mac.Options{},
+		Title:     "Skill Manager",
+		Width:     1280,
+		Height:    820,
+		MinWidth:  720,
+		MinHeight: 600,
+		Mac:       &mac.Options{},
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

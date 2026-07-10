@@ -13,6 +13,8 @@ import {
   FolderOpen,
   FolderPlus,
   Loader2,
+  List,
+  PanelLeftOpen,
   Plus,
   Power,
   RefreshCcw,
@@ -66,6 +68,8 @@ type SkillColumnKey = (typeof skillColumnKeys)[number];
 type SkillColumnWidths = Record<SkillColumnKey, number>;
 type RepositoryPanelItem = skillmgr.Repository;
 type CloneDraft = { source: skillmgr.Repository; parentDir: string };
+type WorkbenchLayout = "desktop" | "split" | "compact";
+type CompactView = "skills" | "detail";
 type TagPickerState =
   | { mode: "single"; skillId: string; anchor: DOMRect }
   | { mode: "bulk"; anchor: DOMRect };
@@ -160,6 +164,9 @@ function App() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(() => new Set());
   const [tagPicker, setTagPicker] = useState<TagPickerState>();
+  const workbenchLayout = useWorkbenchLayout();
+  const [repositoryDrawerOpen, setRepositoryDrawerOpen] = useState(false);
+  const [compactView, setCompactView] = useState<CompactView>("skills");
   const skillsTableRef = useRef<HTMLDivElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const requestedProfilesRef = useRef<Set<string>>(new Set());
@@ -234,7 +241,7 @@ function App() {
     0,
   );
   const allFilteredSelected = filteredSkills.length > 0 && filteredSelectedCount === filteredSkills.length;
-  const workbenchGridColumns = buildWorkbenchGridColumns(sourcePanelWidth, detailPanelWidth);
+  const workbenchGridColumns = buildWorkbenchGridColumns(workbenchLayout, sourcePanelWidth, detailPanelWidth);
 
   useEffect(() => {
     const availableSkillIds = new Set((inventory?.skills ?? []).map((skill) => skill.id));
@@ -249,6 +256,21 @@ function App() {
       selectAllRef.current.indeterminate = filteredSelectedCount > 0 && !allFilteredSelected;
     }
   }, [allFilteredSelected, filteredSelectedCount]);
+
+  useEffect(() => {
+    if (workbenchLayout === "desktop") {
+      setRepositoryDrawerOpen(false);
+    }
+  }, [workbenchLayout]);
+
+  useEffect(() => {
+    if (!repositoryDrawerOpen) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setRepositoryDrawerOpen(false);
+    }
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [repositoryDrawerOpen]);
 
   function maybeGenerateProfileForSkill(skill: skillmgr.Skill) {
     if (
@@ -271,6 +293,9 @@ function App() {
   function selectSkillWithProfile(skill: skillmgr.Skill) {
     selectSkill(skill.id);
     maybeGenerateProfileForSkill(skill);
+    if (workbenchLayout === "compact") {
+      setCompactView("detail");
+    }
   }
 
   async function generateProfile(skillId: string, force = false) {
@@ -441,6 +466,14 @@ function App() {
     setCloneDraft({ source, parentDir });
   }
 
+  function selectRepository(sourceId: string) {
+    setSelectedSourceId(sourceId);
+    setRepositoryDrawerOpen(false);
+    if (workbenchLayout === "compact") {
+      setCompactView("skills");
+    }
+  }
+
   if (inventory && !inventory.syncConfigured) {
     return (
       <SyncSetupScreen
@@ -492,7 +525,7 @@ function App() {
             title="Scan every repository again and reconcile the shared catalog with this machine."
           >
             <RefreshCcw aria-hidden="true" className={cn("h-4 w-4", loading && "animate-spin")} />
-            Rescan All
+            <span className="topbar-command-label">Rescan All</span>
           </Button>
           <IconButton title="Open target folder, sync, scan, and LLM settings." onClick={() => setSettingsOpen(true)}>
             <Settings aria-hidden="true" className="h-4 w-4" />
@@ -516,128 +549,63 @@ function App() {
 
       {loading && <LoadingOverlay label={loadingLabel || "Working..."} />}
 
+      {workbenchLayout === "compact" && (
+        <CompactWorkbenchTabs
+          activeView={compactView}
+          detailAvailable={Boolean(selectedSkill)}
+          onOpenRepositories={() => setRepositoryDrawerOpen(true)}
+          onSelectView={setCompactView}
+        />
+      )}
+
       <main
         className="workbench-grid grid min-h-0 flex-1 overflow-hidden"
+        data-layout={workbenchLayout}
         style={{
           gridTemplateColumns: workbenchGridColumns,
         }}
       >
-        <aside className="workbench-panel workbench-panel--sources flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
-          <PanelHeader title="Repositories">
-            <IconButton title="Choose a Git repository with a remote and add all of its skills to the shared catalog." onClick={() => setAddSourceOpen(true)}>
-              <FolderPlus aria-hidden="true" className="h-4 w-4" />
-            </IconButton>
-          </PanelHeader>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
-            {(inventory?.repositories ?? []).map((source) => (
-              <div
-                key={repositoryItemId(source)}
-                role="button"
-                tabIndex={0}
-                title={`Filter the skill list to items from ${repositoryItemTitle(source)}.`}
-                className={cn(
-                  "source-card w-full cursor-pointer rounded-md border p-3 text-left transition hover:bg-slate-50",
-                  selectedSourceId === repositoryItemId(source) && "source-card--selected border-blue-300 bg-blue-50",
-                )}
-                onClick={() => setSelectedSourceId(repositoryItemId(source))}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setSelectedSourceId(repositoryItemId(source));
-                  }
-                }}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">{repositoryItemTitle(source)}</div>
-                    <div className="truncate text-xs text-muted-foreground">{source.installed ? source.path : source.repoId}</div>
-                    {source.currentRef && <div className="truncate text-xs text-muted-foreground">{source.currentRef}</div>}
-                    {!source.installed && <div className="truncate text-xs font-medium text-amber-700">Missing locally</div>}
-                  </div>
-                  {!source.installed || source.errorCount > 0 || source.dirty ? (
-                    <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-600" />
-                  ) : (
-                    <Circle aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-600" />
-                  )}
-                </div>
-                <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{source.skillCount} skills</span>
-                  <span>{source.installed ? formatDate(source.lastScannedAt) : "Shared"}</span>
-                </div>
-                <div className="mt-3 flex gap-1">
-                  {source.installed && (
-                    <SmallAction title="Open this repository folder in Finder." onClick={(event) => action(event, () => openPath(source.path))}>
-                      <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
-                    </SmallAction>
-                  )}
-                  {source.installed && (
-                    <SmallAction title="Rename how this repository appears in Skill Manager." onClick={(event) => action(event, () => setSourceToEdit(source))}>
-                      <SlidersHorizontal aria-hidden="true" className="h-3.5 w-3.5" />
-                    </SmallAction>
-                  )}
-                  {!source.installed && (
-                    <SmallAction
-                      title="Choose an existing local checkout and verify that its Git remote matches this missing repository."
-                      onClick={(event) => action(event, () => void useExistingRepository(source.repoId))}
-                    >
-                      <FolderOpen aria-hidden="true" className="h-3.5 w-3.5" />
-                    </SmallAction>
-                  )}
-                  <SmallAction
-                    title={
-                      !source.installed
-                        ? source.cloneUrl
-                          ? "Choose a parent folder, name the destination, then shallow-clone this repository and restore its shared skills."
-                          : "Clone is unavailable because the shared source does not contain a clone URL."
-                        : source.dirty
-                        ? "Pull is disabled until local repository changes are committed or stashed."
-                        : "Fetch and fast-forward this repository without merging; shallow checkouts remain shallow."
-                    }
-                    disabled={loading || (source.installed ? source.dirty : !source.cloneUrl)}
-                    onClick={(event) =>
-                      action(event, () =>
-                        source.installed ? pullRepository(source.repoId) : void prepareMissingRepositoryClone(source),
-                      )
-                    }
-                  >
-                    <CloudDownload aria-hidden="true" className={cn("h-3.5 w-3.5", loading && "animate-pulse")} />
-                  </SmallAction>
-                  {source.installed && (
-                    <SmallAction title="Remove this repository from Skill Manager without deleting its files." onClick={(event) => action(event, () => setSourceToRemove(source))}>
-                      <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
-                    </SmallAction>
-                  )}
-                </div>
-                {pullResults[source.repoId] && (
-                  <div className="mt-2 truncate rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-700">
-                    {pullResults[source.repoId]}
-                  </div>
-                )}
-              </div>
-            ))}
-            <button
-              aria-label="Show skills from all sources"
-              title="Clear the source filter and show skills from every repository."
-              className={cn(
-                "source-card source-card--all w-full rounded-md border p-3 text-left text-sm",
-                selectedSourceId === "all" && "source-card--selected border-blue-300 bg-blue-50",
-              )}
-              onClick={() => setSelectedSourceId("all")}
-            >
-              All Sources
-            </button>
-          </div>
-        </aside>
+        {workbenchLayout === "desktop" && (
+          <>
+            <RepositoryPanel
+              loading={loading}
+              pullResults={pullResults}
+              repositories={inventory?.repositories ?? []}
+              selectedSourceId={selectedSourceId}
+              onAdd={() => setAddSourceOpen(true)}
+              onClone={prepareMissingRepositoryClone}
+              onOpenPath={openPath}
+              onPull={(source) => pullRepository(source.repoId)}
+              onRemove={setSourceToRemove}
+              onRename={setSourceToEdit}
+              onSelect={selectRepository}
+              onUseExisting={(source) => useExistingRepository(source.repoId)}
+            />
+            <ResizeHandle
+              label="Resize Repositories"
+              onKeyDown={(event) => resizePanelByKeyboard("source", event)}
+              onPointerDown={(event) => startColumnResize("source", event)}
+            />
+          </>
+        )}
 
-        <ResizeHandle
-          label="Resize Repositories"
-          onKeyDown={(event) => resizePanelByKeyboard("source", event)}
-          onPointerDown={(event) => startColumnResize("source", event)}
-        />
-
-        <section className="workbench-panel workbench-panel--skills flex min-h-0 min-w-0 flex-col overflow-hidden bg-slate-50">
+        {(workbenchLayout !== "compact" || compactView === "skills") && (
+        <section
+          id="workbench-skills-panel"
+          className="workbench-panel workbench-panel--skills flex min-h-0 min-w-0 flex-col overflow-hidden bg-slate-50"
+          role={workbenchLayout === "compact" ? "tabpanel" : undefined}
+          aria-label={workbenchLayout === "compact" ? "Skills" : undefined}
+        >
           <PanelHeader title={selectedSkillIds.size > 0 ? `${selectedSkillIds.size} selected` : "Skills"}>
             <div className="flex items-center gap-2">
+              {workbenchLayout === "split" && (
+                <IconButton
+                  onClick={() => setRepositoryDrawerOpen(true)}
+                  title="Open the repository drawer to filter skills or manage repository checkouts."
+                >
+                  <PanelLeftOpen aria-hidden="true" className="h-4 w-4" />
+                </IconButton>
+              )}
               {selectedSkillIds.size > 0 ? (
                 <>
                   <IconButton
@@ -853,14 +821,23 @@ function App() {
             )}
           </div>
         </section>
+        )}
 
-        <ResizeHandle
-          label="Resize Skill Detail"
-          onKeyDown={(event) => resizePanelByKeyboard("detail", event)}
-          onPointerDown={(event) => startColumnResize("detail", event)}
-        />
+        {workbenchLayout !== "compact" && (
+          <ResizeHandle
+            label="Resize Skill Detail"
+            onKeyDown={(event) => resizePanelByKeyboard("detail", event)}
+            onPointerDown={(event) => startColumnResize("detail", event)}
+          />
+        )}
 
-        <aside className="workbench-panel workbench-panel--detail flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
+        {(workbenchLayout !== "compact" || compactView === "detail") && (
+        <aside
+          id="workbench-detail-panel"
+          className="workbench-panel workbench-panel--detail flex min-h-0 min-w-0 flex-col overflow-hidden bg-white"
+          role={workbenchLayout === "compact" ? "tabpanel" : undefined}
+          aria-label={workbenchLayout === "compact" ? "Skill Detail" : undefined}
+        >
           <PanelHeader title="Skill Detail">
             <div className="flex items-center gap-2">
               {selectedSkill &&
@@ -908,7 +885,56 @@ function App() {
             onReadFilePreview={readSkillFilePreview}
           />
         </aside>
+        )}
       </main>
+
+      {workbenchLayout !== "desktop" && repositoryDrawerOpen && (
+        <div
+          className="repository-drawer-backdrop fixed inset-0 z-[60] flex bg-slate-950/35"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setRepositoryDrawerOpen(false);
+          }}
+          role="presentation"
+        >
+          <div
+            aria-label="Repositories"
+            aria-modal="true"
+            className="repository-drawer h-full min-h-0 overflow-hidden bg-white shadow-2xl"
+            role="dialog"
+          >
+            <RepositoryPanel
+              loading={loading}
+              pullResults={pullResults}
+              repositories={inventory?.repositories ?? []}
+              selectedSourceId={selectedSourceId}
+              onAdd={() => {
+                setRepositoryDrawerOpen(false);
+                setAddSourceOpen(true);
+              }}
+              onClone={async (source) => {
+                setRepositoryDrawerOpen(false);
+                await prepareMissingRepositoryClone(source);
+              }}
+              onClose={() => setRepositoryDrawerOpen(false)}
+              onOpenPath={openPath}
+              onPull={(source) => pullRepository(source.repoId)}
+              onRemove={(source) => {
+                setRepositoryDrawerOpen(false);
+                setSourceToRemove(source);
+              }}
+              onRename={(source) => {
+                setRepositoryDrawerOpen(false);
+                setSourceToEdit(source);
+              }}
+              onSelect={selectRepository}
+              onUseExisting={async (source) => {
+                setRepositoryDrawerOpen(false);
+                await useExistingRepository(source.repoId);
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {tagPicker && (
         <TagPickerPopover
@@ -1024,6 +1050,214 @@ function App() {
         />
       )}
 
+    </div>
+  );
+}
+
+type RepositoryPanelProps = {
+  repositories: skillmgr.Repository[];
+  selectedSourceId: string;
+  loading: boolean;
+  pullResults: Record<string, string>;
+  onAdd: () => void;
+  onSelect: (sourceId: string) => void;
+  onOpenPath: (path: string) => Promise<void>;
+  onRename: (source: RepositoryPanelItem) => void;
+  onUseExisting: (source: RepositoryPanelItem) => Promise<void>;
+  onPull: (source: RepositoryPanelItem) => Promise<void>;
+  onClone: (source: RepositoryPanelItem) => Promise<void>;
+  onRemove: (source: RepositoryPanelItem) => void;
+  onClose?: () => void;
+};
+
+function RepositoryPanel({
+  repositories,
+  selectedSourceId,
+  loading,
+  pullResults,
+  onAdd,
+  onSelect,
+  onOpenPath,
+  onRename,
+  onUseExisting,
+  onPull,
+  onClone,
+  onRemove,
+  onClose,
+}: RepositoryPanelProps) {
+  return (
+    <aside className="workbench-panel workbench-panel--sources flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white">
+      <PanelHeader title="Repositories">
+        <div className="flex items-center gap-2">
+          <IconButton
+            title="Choose a Git repository with a remote and add all of its skills to the shared catalog."
+            onClick={onAdd}
+          >
+            <FolderPlus aria-hidden="true" className="h-4 w-4" />
+          </IconButton>
+          {onClose && (
+            <IconButton
+              autoFocus
+              title="Close the repository drawer and return to the current skill workspace."
+              onClick={onClose}
+            >
+              <X aria-hidden="true" className="h-4 w-4" />
+            </IconButton>
+          )}
+        </div>
+      </PanelHeader>
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        {repositories.map((source) => (
+          <div
+            key={repositoryItemId(source)}
+            role="button"
+            tabIndex={0}
+            title={`Filter the skill list to items from ${repositoryItemTitle(source)}.`}
+            className={cn(
+              "source-card w-full cursor-pointer rounded-md border p-3 text-left transition hover:bg-slate-50",
+              selectedSourceId === repositoryItemId(source) && "source-card--selected border-blue-300 bg-blue-50",
+            )}
+            onClick={() => onSelect(repositoryItemId(source))}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect(repositoryItemId(source));
+              }
+            }}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{repositoryItemTitle(source)}</div>
+                <div className="truncate text-xs text-muted-foreground">{source.installed ? source.path : source.repoId}</div>
+                {source.currentRef && <div className="truncate text-xs text-muted-foreground">{source.currentRef}</div>}
+                {!source.installed && <div className="truncate text-xs font-medium text-amber-700">Missing locally</div>}
+              </div>
+              {!source.installed || source.errorCount > 0 || source.dirty ? (
+                <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-600" />
+              ) : (
+                <Circle aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-600" />
+              )}
+            </div>
+            <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+              <span>{source.skillCount} skills</span>
+              <span>{source.installed ? formatDate(source.lastScannedAt) : "Shared"}</span>
+            </div>
+            <div className="mt-3 flex gap-1">
+              {source.installed && (
+                <SmallAction title="Open this repository folder in Finder." onClick={(event) => action(event, () => void onOpenPath(source.path))}>
+                  <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+                </SmallAction>
+              )}
+              {source.installed && (
+                <SmallAction title="Rename how this repository appears in Skill Manager." onClick={(event) => action(event, () => onRename(source))}>
+                  <SlidersHorizontal aria-hidden="true" className="h-3.5 w-3.5" />
+                </SmallAction>
+              )}
+              {!source.installed && (
+                <SmallAction
+                  title="Choose an existing local checkout and verify that its Git remote matches this missing repository."
+                  onClick={(event) => action(event, () => void onUseExisting(source))}
+                >
+                  <FolderOpen aria-hidden="true" className="h-3.5 w-3.5" />
+                </SmallAction>
+              )}
+              <SmallAction
+                title={
+                  !source.installed
+                    ? source.cloneUrl
+                      ? "Choose a parent folder, name the destination, then shallow-clone this repository and restore its shared skills."
+                      : "Clone is unavailable because the shared source does not contain a clone URL."
+                    : source.dirty
+                      ? "Pull is disabled until local repository changes are committed or stashed."
+                      : "Fetch the current upstream branch and fast-forward only its changed paths; shallow checkouts remain shallow."
+                }
+                disabled={loading || (source.installed ? source.dirty : !source.cloneUrl)}
+                onClick={(event) => action(event, () => void (source.installed ? onPull(source) : onClone(source)))}
+              >
+                <CloudDownload aria-hidden="true" className={cn("h-3.5 w-3.5", loading && "animate-pulse")} />
+              </SmallAction>
+              {source.installed && (
+                <SmallAction title="Remove this repository from Skill Manager without deleting its files." onClick={(event) => action(event, () => onRemove(source))}>
+                  <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                </SmallAction>
+              )}
+            </div>
+            {pullResults[source.repoId] && (
+              <div className="mt-2 truncate rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-700">
+                {pullResults[source.repoId]}
+              </div>
+            )}
+          </div>
+        ))}
+        <button
+          aria-label="Show skills from all sources"
+          title="Clear the source filter and show skills from every repository."
+          className={cn(
+            "source-card source-card--all w-full rounded-md border p-3 text-left text-sm",
+            selectedSourceId === "all" && "source-card--selected border-blue-300 bg-blue-50",
+          )}
+          onClick={() => onSelect("all")}
+        >
+          All Sources
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function CompactWorkbenchTabs({
+  activeView,
+  detailAvailable,
+  onOpenRepositories,
+  onSelectView,
+}: {
+  activeView: CompactView;
+  detailAvailable: boolean;
+  onOpenRepositories: () => void;
+  onSelectView: (view: CompactView) => void;
+}) {
+  function handleArrowKey(event: React.KeyboardEvent, view: CompactView) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    if (view === "skills" && detailAvailable) onSelectView("detail");
+    if (view === "detail") onSelectView("skills");
+  }
+
+  return (
+    <div className="compact-workbench-tabs flex h-12 shrink-0 items-center gap-2 border-b border-border bg-white px-3" role="tablist" aria-label="Workspace views">
+      <IconButton
+        onClick={onOpenRepositories}
+        title="Open the repository drawer to filter skills or manage repository checkouts."
+      >
+        <PanelLeftOpen aria-hidden="true" className="h-4 w-4" />
+      </IconButton>
+      <button
+        aria-controls="workbench-skills-panel"
+        aria-selected={activeView === "skills"}
+        className={cn("compact-workbench-tab", activeView === "skills" && "compact-workbench-tab--active")}
+        onClick={() => onSelectView("skills")}
+        onKeyDown={(event) => handleArrowKey(event, "skills")}
+        role="tab"
+        title="Show the searchable skill table and bulk actions."
+        type="button"
+      >
+        <List aria-hidden="true" className="h-4 w-4" />
+        Skills
+      </button>
+      <button
+        aria-controls="workbench-detail-panel"
+        aria-selected={activeView === "detail"}
+        className={cn("compact-workbench-tab", activeView === "detail" && "compact-workbench-tab--active")}
+        disabled={!detailAvailable}
+        onClick={() => onSelectView("detail")}
+        onKeyDown={(event) => handleArrowKey(event, "detail")}
+        role="tab"
+        title="Show files, tags, status, and metadata for the selected skill."
+        type="button"
+      >
+        <FileText aria-hidden="true" className="h-4 w-4" />
+        Detail
+      </button>
     </div>
   );
 }
@@ -2964,7 +3198,35 @@ function adjustSkillColumnWidths(
   };
 }
 
-function buildWorkbenchGridColumns(sourceWidth: number, detailWidth: number) {
+function useWorkbenchLayout() {
+  const [layout, setLayout] = useState<WorkbenchLayout>(() => workbenchLayoutForWidth(window.innerWidth));
+
+  useEffect(() => {
+    function updateLayout() {
+      const nextLayout = workbenchLayoutForWidth(window.innerWidth);
+      setLayout((current) => (current === nextLayout ? current : nextLayout));
+    }
+    window.addEventListener("resize", updateLayout);
+    return () => window.removeEventListener("resize", updateLayout);
+  }, []);
+
+  return layout;
+}
+
+function workbenchLayoutForWidth(width: number): WorkbenchLayout {
+  if (width >= 1200) return "desktop";
+  if (width >= 850) return "split";
+  return "compact";
+}
+
+function buildWorkbenchGridColumns(layout: WorkbenchLayout, sourceWidth: number, detailWidth: number) {
+  if (layout === "compact") {
+    return "minmax(0, 1fr)";
+  }
+  if (layout === "split") {
+    const detailColumn = `clamp(320px, min(${detailWidth}px, 44vw), ${MAX_DETAIL_WIDTH}px)`;
+    return `minmax(0, 1fr) ${RESIZE_HANDLE_WIDTH}px ${detailColumn}`;
+  }
   const fixedChromeWidth = RESIZE_HANDLE_WIDTH * 2;
   const sourceMin = `min(${MIN_SOURCE_WIDTH}px, calc((100% - ${fixedChromeWidth}px) * 0.24))`;
   const detailMin = `min(${MIN_DETAIL_WIDTH}px, calc((100% - ${fixedChromeWidth}px) * 0.34))`;
