@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-07-10-skill-terminal-action-design.md
+  s_fb768bf33d69de::t_8576055a69bd77 1-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "c2e67ebec419bae21fe4a7274f33512e3d8d5b8e",
+  "prompts": {},
+  "sessions": {
+    "s_fb768bf33d69de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f45b7-c5a9-7e50-9541-5735c936dda3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
