@@ -1,0 +1,33 @@
+main.go
+  s_fb768bf33d69de::t_92c484a9e32901 21-25
+  s_fb768bf33d69de::t_945f936716d196 26
+frontend/src/App.tsx
+  s_fb768bf33d69de::t_92c484a9e32901 16-17,71-72,167-169,244,260-274,296-298
+  s_fb768bf33d69de::t_983485a3e49f82 910-917,921-928,930-933
+  s_fb768bf33d69de::t_55e2187e63cea5 528,552-560,563,592-593,595-598,601-608,824,826-832,834,888,891-909,918-920,929,934-937
+  s_fb768bf33d69de::t_1643909dd56f35 469-476,568-590
+  s_fb768bf33d69de::t_788a1d9aaa4640 594,835-840,1057-1260,1262
+  s_fb768bf33d69de::t_5800e3cbc8446a 1263,3201-3229
+  s_fb768bf33d69de::t_43114430148cdb 938
+  s_fb768bf33d69de::t_241a50029f67fe 1261
+  s_fb768bf33d69de::t_788384bf667368 1264
+frontend/src/App.css
+  s_fb768bf33d69de::t_5800e3cbc8446a 103-158,540,543-548,552-555
+  s_fb768bf33d69de::t_12ebe01e8e71cc 556
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "441e6c141bee75c700479ba3323a313ccf6fb785",
+  "prompts": {},
+  "sessions": {
+    "s_fb768bf33d69de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f45b7-c5a9-7e50-9541-5735c936dda3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
