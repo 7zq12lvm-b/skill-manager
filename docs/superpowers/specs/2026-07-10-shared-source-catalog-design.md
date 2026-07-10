@@ -80,17 +80,25 @@ New clones continue to use:
 git clone --depth=1 --single-branch --no-tags <url> <destination>
 ```
 
-Regular non-shallow repositories continue to update with `git pull --ff-only`.
-
 Shallow repositories do not use `git pull --ff-only --depth=1`, because constraining every pull to a fixed depth may remove the visible connection between the old and new heads and cause a false divergence error. Increasing the fixed depth to two or three only reduces the failure rate when fewer commits arrive between pulls.
 
-All installed repositories instead update with:
+All installed repositories fetch only the checked-out branch into its remote-tracking ref:
 
 ```bash
-git pull --ff-only
+git fetch --no-tags <remote> +refs/heads/<branch>:refs/remotes/<remote>/<branch>
 ```
 
-A repository cloned at depth one remains shallow. Pull downloads the commits created after the original shallow boundary but does not retrieve older pre-clone history. This preserves normal fast-forward behavior without a hard reset. Dirty worktrees remain blocked by the existing UI, and a real local commit divergence is safely rejected by `--ff-only`.
+Skill Manager validates the commit graph without refreshing the worktree index. If local `HEAD` is an ancestor of the fetched upstream, it advances through:
+
+```bash
+git reset --merge <upstream>
+```
+
+`--merge` updates only upstream-changed paths, preserves unrelated local changes, and immediately rejects overlapping local changes. This avoids the whole-index refresh performed by `git pull` or `git merge`, which can block indefinitely while macOS hydrates an unrelated iCloud placeholder file.
+
+A repository cloned at depth one normally remains shallow. Fetch downloads the commits created after the original shallow boundary but does not retrieve older pre-clone history.
+
+Some previously depth-limited checkouts can hold the old and new tips as disconnected shallow roots. When no merge base is visible and the checkout is still shallow, Skill Manager fetches 50 additional commits from the same upstream branch and checks ancestry again. This bounded recovery restores a visible merge base without a hard reset. A genuinely divergent local commit remains rejected.
 
 ## Skill Detail Folder Action
 
@@ -120,7 +128,10 @@ Tests cover:
 - clone cancellation and failure without partial config writes;
 - existing-checkout remote match, mismatch, and successful installation registration;
 - shallow update across more commits than the original clone depth while remaining shallow;
-- real local commit divergence refusal through `--ff-only`;
+- disconnected depth-one tips recovered through bounded history deepening;
+- real local commit divergence refusal;
+- unrelated local changes preserved during a fast-forward;
+- overlapping local changes rejected without moving `HEAD`;
 - source-folder button visibility for available and missing skills.
 
 Final verification includes Go tests, TypeScript checking, frontend production build, Wails build, and a desktop smoke launch against the current v2 data.

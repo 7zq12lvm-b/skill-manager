@@ -59,3 +59,36 @@ func TestSyncStoreSavesLLMConfigAndSkillProfile(t *testing.T) {
 		t.Fatalf("expected synced skill record to mirror profile, got %#v", document.Skills[syncID].Profile)
 	}
 }
+
+func TestSyncStoreUpsertSkillsWritesMultipleRecords(t *testing.T) {
+	store := NewSyncStore(filepath.Join(t.TempDir(), SyncFileName))
+	records := []SyncSkillRecord{
+		{
+			Enabled: true,
+			Tags:    []string{" review ", "review"},
+			Source:  SyncSource{Provider: GitProvider, ID: "example.com/me/repo", Locator: SourceLocator{Subpath: "skills/review"}},
+		},
+		{
+			Tags:   []string{"writing"},
+			Source: SyncSource{Provider: GitProvider, ID: "example.com/me/repo", Locator: SourceLocator{Subpath: "skills/write"}},
+		},
+	}
+	if err := store.UpsertSkills(records); err != nil {
+		t.Fatal(err)
+	}
+	document, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Skills) != 2 {
+		t.Fatalf("expected two records, got %#v", document.Skills)
+	}
+	for id, record := range document.Skills {
+		if record.UpdatedAt == "" {
+			t.Fatalf("expected %s to have a shared update timestamp", id)
+		}
+	}
+	if tags := document.Skills["git:example.com/me/repo//skills/review"].Tags; len(tags) != 1 || tags[0] != "review" {
+		t.Fatalf("expected normalized tags, got %#v", tags)
+	}
+}

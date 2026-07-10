@@ -498,6 +498,44 @@ export namespace skillmgr {
 		    return a;
 		}
 	}
+	export class BulkDisableResult {
+	    inventory: Inventory;
+	    disabled: number;
+	    alreadyDisabled: number;
+	    skipped: number;
+	    failed?: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new BulkDisableResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.inventory = this.convertValues(source["inventory"], Inventory);
+	        this.disabled = source["disabled"];
+	        this.alreadyDisabled = source["alreadyDisabled"];
+	        this.skipped = source["skipped"];
+	        this.failed = source["failed"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class BulkEnableResult {
 	    inventory: Inventory;
 	    enabled: number;
@@ -514,6 +552,44 @@ export namespace skillmgr {
 	        this.inventory = this.convertValues(source["inventory"], Inventory);
 	        this.enabled = source["enabled"];
 	        this.alreadyEnabled = source["alreadyEnabled"];
+	        this.skipped = source["skipped"];
+	        this.failed = source["failed"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BulkTagResult {
+	    inventory: Inventory;
+	    updated: number;
+	    unchanged: number;
+	    skipped: number;
+	    failed?: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new BulkTagResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.inventory = this.convertValues(source["inventory"], Inventory);
+	        this.updated = source["updated"];
+	        this.unchanged = source["unchanged"];
 	        this.skipped = source["skipped"];
 	        this.failed = source["failed"];
 	    }
@@ -646,6 +722,24 @@ export namespace skillmgr {
 	        this.name = source["name"];
 	        this.path = source["path"];
 	        this.isDir = source["isDir"];
+	    }
+	}
+	export class SkillFilePreview {
+	    path: string;
+	    previewable: boolean;
+	    content?: string;
+	    reason?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SkillFilePreview(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.previewable = source["previewable"];
+	        this.content = source["content"];
+	        this.reason = source["reason"];
 	    }
 	}
 

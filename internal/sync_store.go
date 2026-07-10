@@ -130,17 +130,24 @@ func (s *SyncStore) Save(document SyncDocument) error {
 }
 
 func (s *SyncStore) UpsertSkill(record SyncSkillRecord) error {
+	return s.UpsertSkills([]SyncSkillRecord{record})
+}
+
+func (s *SyncStore) UpsertSkills(records []SyncSkillRecord) error {
 	document, err := s.Load()
 	if err != nil {
 		return err
 	}
-	record = normalizeSyncSkillRecord(record)
-	id := syncRecordID(record)
-	if id == "" {
-		return errors.New("sync skill source is incomplete")
+	updatedAt := time.Now().UTC().Format(time.RFC3339)
+	for _, record := range records {
+		record = normalizeSyncSkillRecord(record)
+		id := syncRecordID(record)
+		if id == "" {
+			return errors.New("sync skill source is incomplete")
+		}
+		record.UpdatedAt = updatedAt
+		document.Skills[id] = record
 	}
-	record.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	document.Skills[id] = record
 	return s.Save(document)
 }
 

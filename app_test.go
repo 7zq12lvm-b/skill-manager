@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -76,6 +77,96 @@ func TestUseExistingRepositoryRequiresMatchingRemoteAndRestoresSkills(t *testing
 	}
 	if len(inventory.Skills) != 1 || inventory.Skills[0].Status == skillmgr.StatusMissingSource {
 		t.Fatalf("expected missing skill to recover, got %#v", inventory.Skills)
+	}
+}
+
+func TestBulkTagAdditionAndDisableSelectedSkills(t *testing.T) {
+	root := t.TempDir()
+	syncFolder := filepath.Join(root, "sync")
+	target := filepath.Join(root, "target")
+	source := filepath.Join(root, "source", "review")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(source, filepath.Join(target, "review")); err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	skill := skillmgr.Skill{
+		ID:             "review-id",
+		Name:           "review",
+		TargetName:     "review",
+		SourcePath:     source,
+		RepoID:         "example.com/me/repo",
+		RepoSubpath:    "skills/review",
+		IsSynced:       true,
+		IsActive:       true,
+		DesiredEnabled: &enabled,
+		Tags:           []string{"existing"},
+	}
+	app := &App{
+		ctx:     context.Background(),
+		store:   skillmgr.NewConfigStore(filepath.Join(root, "config.json")),
+		service: skillmgr.NewService(),
+		config: skillmgr.Config{
+			TargetDirs: []string{target},
+			Sync:       skillmgr.SyncConfig{Folder: syncFolder},
+		},
+		inventory: skillmgr.Inventory{Skills: []skillmgr.Skill{skill}},
+	}
+	if err := skillmgr.NewSyncStore(skillmgr.SyncPathFromFolder(syncFolder)).UpsertSkill(skillmgr.SyncSkillRecord{
+		Enabled: true,
+		Tags:    []string{"existing"},
+		Source:  skillmgr.SyncSource{Provider: skillmgr.GitProvider, ID: skill.RepoID, Locator: skillmgr.SourceLocator{Subpath: skill.RepoSubpath}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	tagResult, err := app.AddSkillTags([]string{skill.ID, skill.ID}, []string{"new", "existing", " new "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tagResult.Updated != 1 || tagResult.Unchanged != 0 {
+		t.Fatalf("unexpected bulk tag result: %#v", tagResult)
+	}
+	document, err := skillmgr.NewSyncStore(skillmgr.SyncPathFromFolder(syncFolder)).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := document.Skills["git:example.com/me/repo//skills/review"]
+	if len(record.Tags) != 2 || record.Tags[0] != "existing" || record.Tags[1] != "new" {
+		t.Fatalf("expected merged tags, got %#v", record.Tags)
+	}
+
+	app.inventory.Skills = []skillmgr.Skill{skill}
+	disableResult, err := app.DisableSkills([]string{skill.ID, skill.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disableResult.Disabled != 1 || disableResult.AlreadyDisabled != 0 {
+		t.Fatalf("unexpected bulk disable result: %#v", disableResult)
+	}
+	if _, err := os.Lstat(filepath.Join(target, "review")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected selected skill link to be removed, got %v", err)
+	}
+}
+
+func TestValidateTerminalDirectory(t *testing.T) {
+	root := t.TempDir()
+	filePath := filepath.Join(root, "file.txt")
+	if err := os.WriteFile(filePath, []byte("not a directory\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateTerminalDirectory(root); err != nil {
+		t.Fatalf("expected temporary directory to be accepted: %v", err)
+	}
+	for _, path := range []string{"", filepath.Join(root, "missing"), filePath} {
+		if err := validateTerminalDirectory(path); err == nil {
+			t.Fatalf("expected %q to be rejected", path)
+		}
 	}
 }
 

@@ -106,6 +106,22 @@ type BulkEnableResult struct {
 	Failed         []string  `json:"failed,omitempty"`
 }
 
+type BulkDisableResult struct {
+	Inventory       Inventory `json:"inventory"`
+	Disabled        int       `json:"disabled"`
+	AlreadyDisabled int       `json:"alreadyDisabled"`
+	Skipped         int       `json:"skipped"`
+	Failed          []string  `json:"failed,omitempty"`
+}
+
+type BulkTagResult struct {
+	Inventory Inventory `json:"inventory"`
+	Updated   int       `json:"updated"`
+	Unchanged int       `json:"unchanged"`
+	Skipped   int       `json:"skipped"`
+	Failed    []string  `json:"failed,omitempty"`
+}
+
 type CloneRepositoryResult struct {
 	Inventory Inventory `json:"inventory"`
 	Message   string    `json:"message"`
@@ -197,6 +213,13 @@ type SkillFileEntry struct {
 	Name  string `json:"name"`
 	Path  string `json:"path"`
 	IsDir bool   `json:"isDir"`
+}
+
+type SkillFilePreview struct {
+	Path        string `json:"path"`
+	Previewable bool   `json:"previewable"`
+	Content     string `json:"content,omitempty"`
+	Reason      string `json:"reason,omitempty"`
 }
 
 type SkillProfile struct {

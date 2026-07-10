@@ -318,6 +318,25 @@
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45);
 }
 
+.tag-add-button {
+  transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+.tag-add-button:hover {
+  background: color-mix(in srgb, var(--sm-link-soft), white 45%);
+}
+
+.tag-picker {
+  box-shadow: var(--sm-shadow);
+}
+
+.tag-picker-option:focus-visible,
+.tag-add-button:focus-visible,
+.skill-select-checkbox:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--sm-link), white 15%);
+  outline-offset: 2px;
+}
+
 .tag-filter-chip {
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45);
 }
@@ -359,6 +378,12 @@
 
 .file-tree-row--button:hover {
   background: color-mix(in srgb, var(--sm-link-soft), white 55%);
+}
+
+.file-tree-row--selected {
+  background: color-mix(in srgb, var(--sm-link-soft), white 36%);
+  color: var(--sm-link-dark);
+  box-shadow: inset 3px 0 0 var(--sm-link);
 }
 
 .file-tree-spacer {
@@ -417,6 +442,16 @@
 .icon-button:hover,
 .small-action:hover {
   background: color-mix(in srgb, var(--sm-link-soft), white 58%) !important;
+}
+
+.icon-button--primary {
+  border-color: var(--sm-link) !important;
+  background: var(--sm-link) !important;
+  color: white !important;
+}
+
+.icon-button--primary:hover {
+  background: var(--sm-link-dark) !important;
 }
 
 .modal-backdrop {

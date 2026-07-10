@@ -1,4 +1,5 @@
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   Check,
@@ -12,10 +13,13 @@ import {
   FolderOpen,
   FolderPlus,
   Loader2,
+  Plus,
+  Power,
   RefreshCcw,
   Search,
   Settings,
   SlidersHorizontal,
+  SquareTerminal,
   Tag,
   Trash2,
   X,
@@ -57,22 +61,29 @@ const MIN_DETAIL_WIDTH = 220;
 const MAX_DETAIL_WIDTH = 560;
 const RESIZE_HANDLE_WIDTH = 8;
 const SKILLS_COLUMNS_KEY = "skill-manager:skills-column-widths";
-const skillColumnKeys = ["enabled", "skill", "source", "status"] as const;
+const skillColumnKeys = ["selection", "enabled", "skill", "tags", "source", "status"] as const;
 type SkillColumnKey = (typeof skillColumnKeys)[number];
 type SkillColumnWidths = Record<SkillColumnKey, number>;
 type RepositoryPanelItem = skillmgr.Repository;
 type CloneDraft = { source: skillmgr.Repository; parentDir: string };
+type TagPickerState =
+  | { mode: "single"; skillId: string; anchor: DOMRect }
+  | { mode: "bulk"; anchor: DOMRect };
 const DEFAULT_SKILL_COLUMN_WIDTHS: SkillColumnWidths = {
-  enabled: 14,
-  skill: 44,
-  source: 20,
-  status: 22,
+  selection: 7,
+  enabled: 10,
+  skill: 29,
+  tags: 24,
+  source: 15,
+  status: 15,
 };
 const MIN_SKILL_COLUMN_WIDTHS: SkillColumnWidths = {
-  enabled: 13,
-  skill: 32,
-  source: 14,
-  status: 14,
+  selection: 6,
+  enabled: 8,
+  skill: 22,
+  tags: 14,
+  source: 12,
+  status: 12,
 };
 const TAG_TONES = [
   { backgroundColor: "#e5f6ee", borderColor: "#9ad9bf", color: "#126747" },
@@ -110,6 +121,7 @@ function App() {
     enableSkill,
     enableSkills,
     disableSkill,
+    disableSkills,
     cloneRepository,
     useExistingRepository,
     resolveConflict,
@@ -119,7 +131,10 @@ function App() {
     readSkillEnv,
     saveSkillEnv,
     saveSkillTags,
+    addSkillTags,
     listSkillFiles,
+    readSkillFilePreview,
+    openInTerminal,
     openInVSCode,
     openPath,
     selectSkill,
@@ -143,7 +158,10 @@ function App() {
   const [skillColumnWidths, setSkillColumnWidths] = useState(readStoredSkillColumnWidths);
   const [generatingProfileIds, setGeneratingProfileIds] = useState<Set<string>>(() => new Set());
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(() => new Set());
+  const [tagPicker, setTagPicker] = useState<TagPickerState>();
   const skillsTableRef = useRef<HTMLDivElement>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
   const requestedProfilesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -210,10 +228,27 @@ function App() {
     filteredSkills.find((skill) => skill.id === selectedSkillId) ??
     inventory?.skills?.find((skill) => skill.id === selectedSkillId) ??
     filteredSkills[0];
-  const bulkEnableSkillIds = filteredSkills
-    .filter((skill) => !isActiveSkill(skill) && skill.status === "disabled")
-    .map((skill) => skill.id);
+  const selectedSkillIdList = Array.from(selectedSkillIds);
+  const filteredSelectedCount = filteredSkills.reduce(
+    (count, skill) => count + (selectedSkillIds.has(skill.id) ? 1 : 0),
+    0,
+  );
+  const allFilteredSelected = filteredSkills.length > 0 && filteredSelectedCount === filteredSkills.length;
   const workbenchGridColumns = buildWorkbenchGridColumns(sourcePanelWidth, detailPanelWidth);
+
+  useEffect(() => {
+    const availableSkillIds = new Set((inventory?.skills ?? []).map((skill) => skill.id));
+    setSelectedSkillIds((current) => {
+      const next = new Set(Array.from(current).filter((skillId) => availableSkillIds.has(skillId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [inventory?.skills]);
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = filteredSelectedCount > 0 && !allFilteredSelected;
+    }
+  }, [allFilteredSelected, filteredSelectedCount]);
 
   function maybeGenerateProfileForSkill(skill: skillmgr.Skill) {
     if (
@@ -269,6 +304,52 @@ function App() {
         ? current.filter((item) => item !== tag)
         : [...current, tag].sort((left, right) => left.localeCompare(right)),
     );
+  }
+
+  function toggleSkillSelection(skillId: string) {
+    setSelectedSkillIds((current) => {
+      const next = new Set(current);
+      if (next.has(skillId)) {
+        next.delete(skillId);
+      } else {
+        next.add(skillId);
+      }
+      return next;
+    });
+  }
+
+  function toggleFilteredSelection() {
+    setSelectedSkillIds((current) => {
+      const next = new Set(current);
+      if (allFilteredSelected) {
+        for (const skill of filteredSkills) next.delete(skill.id);
+      } else {
+        for (const skill of filteredSkills) next.add(skill.id);
+      }
+      return next;
+    });
+  }
+
+  function openSingleTagPicker(skillId: string, anchor: HTMLElement) {
+    setTagPicker({ mode: "single", skillId, anchor: anchor.getBoundingClientRect() });
+  }
+
+  function openBulkTagPicker(anchor: HTMLElement) {
+    setTagPicker({ mode: "bulk", anchor: anchor.getBoundingClientRect() });
+  }
+
+  async function addSingleSkillTag(skillId: string, tag: string) {
+    const skill = inventory?.skills?.find((item) => item.id === skillId);
+    if (!skill) return;
+    const nextTags = cleanUiTags([...(skill.tags ?? []), tag]);
+    setTagPicker(undefined);
+    await saveSkillTags(skillId, nextTags);
+  }
+
+  async function addTagsToSelectedSkills(tags: string[]) {
+    if (selectedSkillIdList.length === 0 || tags.length === 0) return;
+    setTagPicker(undefined);
+    await addSkillTags(selectedSkillIdList, tags);
   }
 
   function startColumnResize(kind: "source" | "detail", event: React.PointerEvent) {
@@ -555,23 +636,48 @@ function App() {
         />
 
         <section className="workbench-panel workbench-panel--skills flex min-h-0 min-w-0 flex-col overflow-hidden bg-slate-50">
-          <PanelHeader title="Skills">
+          <PanelHeader title={selectedSkillIds.size > 0 ? `${selectedSkillIds.size} selected` : "Skills"}>
             <div className="flex items-center gap-2">
-              <Button
-                onClick={() => void enableSkills(filteredSkills.map((skill) => skill.id))}
-                disabled={loading || bulkEnableSkillIds.length === 0}
-                title="Enable every eligible skill in the current filtered list; conflicts and invalid or missing skills are skipped."
-              >
-                <Check aria-hidden="true" className="h-4 w-4" />
-                Enable all
-              </Button>
-              <IconButton
-                onClick={rescan}
-                disabled={loading}
-                title="Scan repositories again and reconcile the shared skill state on this machine."
-              >
-                <RefreshCcw aria-hidden="true" className={cn("h-4 w-4", loading && "animate-spin")} />
-              </IconButton>
+              {selectedSkillIds.size > 0 ? (
+                <>
+                  <IconButton
+                    onClick={() => void enableSkills(selectedSkillIdList)}
+                    disabled={loading}
+                    className="icon-button--primary"
+                    title="Enable the selected skills that are available and valid; unavailable or invalid selections are skipped."
+                  >
+                    <Check aria-hidden="true" className="h-4 w-4" />
+                  </IconButton>
+                  <IconButton
+                    onClick={() => void disableSkills(selectedSkillIdList)}
+                    disabled={loading}
+                    title="Disable active skills in the selection by removing their managed target links."
+                  >
+                    <Power aria-hidden="true" className="h-4 w-4" />
+                  </IconButton>
+                  <IconButton
+                    onClick={(event) => openBulkTagPicker(event.currentTarget)}
+                    disabled={loading}
+                    title="Choose one or more tags to append to every selected skill without replacing existing tags."
+                  >
+                    <Tag aria-hidden="true" className="h-4 w-4" />
+                  </IconButton>
+                  <IconButton
+                    onClick={() => setSelectedSkillIds(new Set())}
+                    title="Clear the current skill selection without changing any skills."
+                  >
+                    <X aria-hidden="true" className="h-4 w-4" />
+                  </IconButton>
+                </>
+              ) : (
+                <IconButton
+                  onClick={rescan}
+                  disabled={loading}
+                  title="Scan repositories again and reconcile the shared skill state on this machine."
+                >
+                  <RefreshCcw aria-hidden="true" className={cn("h-4 w-4", loading && "animate-spin")} />
+                </IconButton>
+              )}
             </div>
           </PanelHeader>
           {pullResults.bulk && (
@@ -647,6 +753,14 @@ function App() {
               </colgroup>
               <thead className="text-left text-xs font-medium text-muted-foreground">
                 <tr className="border-b border-border">
+                  <SelectionHeaderCell
+                    checked={allFilteredSelected}
+                    disabled={filteredSkills.length === 0}
+                    inputRef={selectAllRef}
+                    onChange={toggleFilteredSelection}
+                    onKeyResize={(event) => resizeSkillColumnByKeyboard("selection", "enabled", event)}
+                    onResize={(event) => startSkillColumnResize("selection", "enabled", event)}
+                  />
                   <SkillHeaderCell
                     label="On"
                     onKeyResize={(event) => resizeSkillColumnByKeyboard("enabled", "skill", event)}
@@ -654,8 +768,13 @@ function App() {
                   />
                   <SkillHeaderCell
                     label="Skill"
-                    onKeyResize={(event) => resizeSkillColumnByKeyboard("skill", "source", event)}
-                    onResize={(event) => startSkillColumnResize("skill", "source", event)}
+                    onKeyResize={(event) => resizeSkillColumnByKeyboard("skill", "tags", event)}
+                    onResize={(event) => startSkillColumnResize("skill", "tags", event)}
+                  />
+                  <SkillHeaderCell
+                    label="Tags"
+                    onKeyResize={(event) => resizeSkillColumnByKeyboard("tags", "source", event)}
+                    onResize={(event) => startSkillColumnResize("tags", "source", event)}
                   />
                   <SkillHeaderCell
                     label="Source"
@@ -685,6 +804,18 @@ function App() {
                     tabIndex={0}
                     title={`Open the detail panel for ${skill.displayName || skill.name}.`}
                   >
+                    <td className="overflow-hidden px-3 py-2">
+                      <input
+                        aria-label={`Select ${skill.displayName || skill.name} for bulk actions`}
+                        checked={selectedSkillIds.has(skill.id)}
+                        className="skill-select-checkbox h-4 w-4 accent-[var(--sm-link)]"
+                        onChange={() => toggleSkillSelection(skill.id)}
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        title="Include this skill in bulk Enable, Disable, and Add Tags actions."
+                        type="checkbox"
+                      />
+                    </td>
                     <td className="overflow-hidden px-2 py-2">
                       <SkillSwitch
                         skill={skill}
@@ -697,7 +828,12 @@ function App() {
                       <div className="truncate text-xs text-muted-foreground">
                         {skill.description || skill.repoSubpath || "No summary yet"}
                       </div>
-                      <TagList tags={skill.tags} compact />
+                    </td>
+                    <td className="min-w-0 px-3 py-2">
+                      <SkillTagsCell
+                        skill={skill}
+                        onOpenPicker={(anchor) => openSingleTagPicker(skill.id, anchor)}
+                      />
                     </td>
                     <td className="min-w-0 overflow-hidden px-3 py-2 text-muted-foreground">
                       <div className="truncate">{skill.sourceAlias || skill.repoId || skill.sourceId}</div>
@@ -745,6 +881,17 @@ function App() {
               >
                 <VSCodeIcon className="h-4 w-4" />
               </IconButton>
+              {selectedSkill &&
+                selectedSkill.sourcePath &&
+                selectedSkill.status !== "missing-source" &&
+                selectedSkill.status !== "missing-path" && (
+                  <IconButton
+                    title="Open Terminal.app with this skill's original source directory as the working directory."
+                    onClick={() => openInTerminal(selectedSkill.sourcePath)}
+                  >
+                    <SquareTerminal aria-hidden="true" className="h-4 w-4" />
+                  </IconButton>
+                )}
             </div>
           </PanelHeader>
           <SkillDetail
@@ -758,9 +905,29 @@ function App() {
             onSaveEnv={saveSkillEnv}
             onSaveTags={saveSkillTags}
             onListFiles={listSkillFiles}
+            onReadFilePreview={readSkillFilePreview}
           />
         </aside>
       </main>
+
+      {tagPicker && (
+        <TagPickerPopover
+          allTags={allTags}
+          anchor={tagPicker.anchor}
+          existingTags={
+            tagPicker.mode === "single"
+              ? inventory?.skills?.find((skill) => skill.id === tagPicker.skillId)?.tags ?? []
+              : []
+          }
+          mode={tagPicker.mode}
+          selectedCount={selectedSkillIds.size}
+          onClose={() => setTagPicker(undefined)}
+          onSingleSelect={(tag) =>
+            tagPicker.mode === "single" ? addSingleSkillTag(tagPicker.skillId, tag) : Promise.resolve()
+          }
+          onBulkSubmit={addTagsToSelectedSkills}
+        />
+      )}
 
       {addSourceOpen && (
         <Modal title="Add Repository" onClose={() => setAddSourceOpen(false)}>
@@ -1017,6 +1184,48 @@ function SkillHeaderCell({
   );
 }
 
+function SelectionHeaderCell({
+  checked,
+  disabled,
+  inputRef,
+  onChange,
+  onKeyResize,
+  onResize,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  inputRef: React.RefObject<HTMLInputElement>;
+  onChange: () => void;
+  onKeyResize: (event: React.KeyboardEvent) => void;
+  onResize: (event: React.PointerEvent) => void;
+}) {
+  return (
+    <th className="skill-header-cell sticky top-0 z-20 bg-slate-100 px-3 py-2">
+      <div className="relative flex min-w-0 items-center">
+        <input
+          ref={inputRef}
+          aria-label="Select all skills in the current filtered list"
+          checked={checked}
+          className="skill-select-checkbox h-4 w-4 accent-[var(--sm-link)]"
+          disabled={disabled}
+          onChange={onChange}
+          title="Select or clear every skill currently shown by the active filters."
+          type="checkbox"
+        />
+        <span
+          role="separator"
+          aria-label="Resize Selection column"
+          tabIndex={0}
+          title="Drag this divider or use the arrow keys to change the Selection column width."
+          onKeyDown={onKeyResize}
+          onPointerDown={onResize}
+          className="column-resize absolute -right-3 top-1/2 h-6 w-2 -translate-y-1/2 cursor-col-resize rounded hover:bg-blue-400/50"
+        />
+      </div>
+    </th>
+  );
+}
+
 function SkillSwitch({
   skill,
   onEnable,
@@ -1095,18 +1304,7 @@ function profileComplete(profile?: skillmgr.SkillProfile) {
   return Boolean(profile?.summaryZh?.trim() && (profile.useCasesZh?.length ?? 0) > 0);
 }
 
-function SkillDetail({
-  skill,
-  syncConfigured,
-  llmConfig,
-  isGeneratingProfile,
-  onResolve,
-  onGenerateProfile,
-  onReadEnv,
-  onSaveEnv,
-  onSaveTags,
-  onListFiles,
-}: {
+type SkillDetailProps = {
   skill?: skillmgr.Skill;
   syncConfigured: boolean;
   llmConfig?: skillmgr.SyncLLMConfig;
@@ -1117,11 +1315,86 @@ function SkillDetail({
   onSaveEnv: (skillId: string, content: string) => Promise<void>;
   onSaveTags: (skillId: string, tags: string[]) => Promise<void>;
   onListFiles: (skillId: string, relativeDir: string) => Promise<skillmgr.SkillFileEntry[]>;
-}) {
-  if (!skill) {
+  onReadFilePreview: (skillId: string, relativeFile: string) => Promise<skillmgr.SkillFilePreview>;
+};
+
+type DetailPreviewState = {
+  path: string;
+  content: string;
+  previewable: boolean;
+  loading: boolean;
+  reason?: string;
+};
+
+function initialDetailPreview(skill: skillmgr.Skill): DetailPreviewState {
+  return {
+    path: skill.previewFile || "SKILL.md",
+    content: skill.preview || "",
+    previewable: Boolean(skill.preview),
+    loading: false,
+    reason: skill.preview ? undefined : "No text preview is available for this file.",
+  };
+}
+
+function SkillDetail(props: SkillDetailProps) {
+  if (!props.skill) {
     return <div className="p-5 text-sm text-muted-foreground">No skill selected.</div>;
   }
+  return <SkillDetailContent {...props} skill={props.skill} />;
+}
+
+function SkillDetailContent({
+  skill,
+  syncConfigured,
+  llmConfig,
+  isGeneratingProfile,
+  onResolve,
+  onGenerateProfile,
+  onReadEnv,
+  onSaveEnv,
+  onSaveTags,
+  onListFiles,
+  onReadFilePreview,
+}: Omit<SkillDetailProps, "skill"> & { skill: skillmgr.Skill }) {
+  const [preview, setPreview] = useState<DetailPreviewState>(() => initialDetailPreview(skill));
+  const previewRequestRef = useRef(0);
   const activeLinkedPaths = linkedSkillPaths(skill);
+
+  useEffect(() => {
+    previewRequestRef.current += 1;
+    setPreview(initialDetailPreview(skill));
+  }, [skill.id, skill.preview, skill.previewFile]);
+
+  async function selectPreviewFile(relativeFile: string) {
+    const requestId = previewRequestRef.current + 1;
+    previewRequestRef.current = requestId;
+    if (relativeFile === skill.previewFile && skill.preview) {
+      setPreview(initialDetailPreview(skill));
+      return;
+    }
+    setPreview({ path: relativeFile, content: "", previewable: false, loading: true });
+    try {
+      const result = await onReadFilePreview(skill.id, relativeFile);
+      if (previewRequestRef.current !== requestId) return;
+      setPreview({
+        path: result.path || relativeFile,
+        content: result.content || "",
+        previewable: result.previewable,
+        loading: false,
+        reason: result.reason,
+      });
+    } catch (error) {
+      if (previewRequestRef.current !== requestId) return;
+      setPreview({
+        path: relativeFile,
+        content: "",
+        previewable: false,
+        loading: false,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   return (
     <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-5">
       <div className="mb-5 flex min-w-0 flex-wrap items-start justify-between gap-3">
@@ -1206,16 +1479,30 @@ function SkillDetail({
       )}
 
       <DetailSection title="Files">
-        <SkillFileTree skill={skill} onListFiles={onListFiles} />
+        <SkillFileTree
+          skill={skill}
+          onListFiles={onListFiles}
+          onSelectFile={selectPreviewFile}
+          selectedFile={preview.path}
+        />
       </DetailSection>
 
-      {skill.preview && (
-        <DetailSection title={`Preview: ${skill.previewFile}`}>
+      <DetailSection title={`Preview: ${preview.path}`}>
+        {preview.loading ? (
+          <div className="preview-message flex min-h-24 items-center gap-2 rounded-md border border-border bg-slate-50 p-3 text-xs text-muted-foreground">
+            <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+            Reading text preview...
+          </div>
+        ) : preview.previewable ? (
           <pre className="code-preview code-preview--wrap max-h-72 max-w-full overflow-auto rounded-md border border-border bg-slate-950 p-3 text-xs leading-5 text-slate-100">
-            {skill.preview}
+            {preview.content}
           </pre>
-        </DetailSection>
-      )}
+        ) : (
+          <div className="preview-message min-h-24 rounded-md border border-border bg-slate-50 p-3 text-xs leading-5 text-muted-foreground">
+            {preview.reason || "This file cannot be previewed as text."}
+          </div>
+        )}
+      </DetailSection>
 
       <EnvEditor skill={skill} onReadEnv={onReadEnv} onSaveEnv={onSaveEnv} />
     </div>
@@ -1231,9 +1518,13 @@ type FileDirectoryState = {
 function SkillFileTree({
   skill,
   onListFiles,
+  onSelectFile,
+  selectedFile,
 }: {
   skill: skillmgr.Skill;
   onListFiles: (skillId: string, relativeDir: string) => Promise<skillmgr.SkillFileEntry[]>;
+  onSelectFile: (relativeFile: string) => void;
+  selectedFile: string;
 }) {
   const [directories, setDirectories] = useState<Record<string, FileDirectoryState>>({});
   const [openDirs, setOpenDirs] = useState<Set<string>>(() => new Set());
@@ -1297,8 +1588,10 @@ function SkillFileTree({
           depth={0}
           directories={directories}
           entries={rootState.entries}
+          onSelectFile={onSelectFile}
           onToggleDirectory={toggleDirectory}
           openDirs={openDirs}
+          selectedFile={selectedFile}
         />
       ) : (
         <FileTreeMessage>No files found.</FileTreeMessage>
@@ -1312,12 +1605,16 @@ function FileTreeEntries({
   depth,
   directories,
   openDirs,
+  selectedFile,
+  onSelectFile,
   onToggleDirectory,
 }: {
   entries: skillmgr.SkillFileEntry[];
   depth: number;
   directories: Record<string, FileDirectoryState>;
   openDirs: Set<string>;
+  selectedFile: string;
+  onSelectFile: (relativeFile: string) => void;
   onToggleDirectory: (relativeDir: string) => void;
 }) {
   return (
@@ -1328,11 +1625,22 @@ function FileTreeEntries({
         const indent = `${0.5 + depth * 0.85}rem`;
         if (!entry.isDir) {
           return (
-            <div key={entry.path} className="file-tree-row min-w-0" style={{ paddingLeft: indent }} title={entry.path}>
+            <button
+              key={entry.path}
+              aria-pressed={selectedFile === entry.path}
+              className={cn(
+                "file-tree-row file-tree-row--button min-w-0",
+                selectedFile === entry.path && "file-tree-row--selected",
+              )}
+              onClick={() => onSelectFile(entry.path)}
+              style={{ paddingLeft: indent }}
+              title={`Load ${entry.path} into the text preview panel when its content is previewable.`}
+              type="button"
+            >
               <span className="file-tree-spacer" aria-hidden="true" />
               <FileText aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-500" />
               <span className="min-w-0 truncate">{entry.name}</span>
-            </div>
+            </button>
           );
         }
         return (
@@ -1368,8 +1676,10 @@ function FileTreeEntries({
                 depth={depth + 1}
                 directories={directories}
                 entries={directoryState.entries}
+                onSelectFile={onSelectFile}
                 onToggleDirectory={onToggleDirectory}
                 openDirs={openDirs}
+                selectedFile={selectedFile}
               />
             ) : null}
           </div>
@@ -1607,14 +1917,16 @@ function TagList({
   compact = false,
   disabled = false,
   onRemove,
+  trailing,
 }: {
   tags?: string[];
   compact?: boolean;
   disabled?: boolean;
   onRemove?: (tag: string) => void;
+  trailing?: ReactNode;
 }) {
   const visibleTags = tags ?? [];
-  if (visibleTags.length === 0) {
+  if (visibleTags.length === 0 && !trailing) {
     if (compact) return null;
     return <div className="text-xs text-muted-foreground">No tags yet.</div>;
   }
@@ -1641,7 +1953,223 @@ function TagList({
           )}
         </span>
       ))}
+      {trailing}
     </div>
+  );
+}
+
+function SkillTagsCell({
+  skill,
+  onOpenPicker,
+}: {
+  skill: skillmgr.Skill;
+  onOpenPicker: (anchor: HTMLElement) => void;
+}) {
+  return (
+    <TagList
+      tags={skill.tags}
+      trailing={
+        <button
+          aria-label={`Add a tag to ${skill.displayName || skill.name}`}
+          className="tag-add-button inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-dashed border-slate-300 bg-white text-slate-500 hover:border-[var(--sm-link)] hover:text-[var(--sm-link)]"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenPicker(event.currentTarget);
+          }}
+          onKeyDown={(event) => event.stopPropagation()}
+          title="Search existing tags or create a new tag, then add it to this skill immediately."
+          type="button"
+        >
+          <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+        </button>
+      }
+    />
+  );
+}
+
+function TagPickerPopover({
+  allTags,
+  anchor,
+  existingTags,
+  mode,
+  selectedCount,
+  onClose,
+  onSingleSelect,
+  onBulkSubmit,
+}: {
+  allTags: string[];
+  anchor: DOMRect;
+  existingTags: string[];
+  mode: "single" | "bulk";
+  selectedCount: number;
+  onClose: () => void;
+  onSingleSelect: (tag: string) => Promise<void>;
+  onBulkSubmit: (tags: string[]) => Promise<void>;
+}) {
+  const [query, setQuery] = useState("");
+  const [pendingTags, setPendingTags] = useState<string[]>([]);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const existingSet = useMemo(() => new Set(existingTags), [existingTags]);
+  const normalizedQuery = query.trim();
+  const filteredTags = allTags.filter((tag) => {
+    if (mode === "single" && existingSet.has(tag)) return false;
+    return !normalizedQuery || tag.toLowerCase().includes(normalizedQuery.toLowerCase());
+  });
+  const exactTagExists = allTags.some((tag) => tag.toLowerCase() === normalizedQuery.toLowerCase());
+  const canCreate = Boolean(normalizedQuery) && !exactTagExists && !existingSet.has(normalizedQuery);
+  const width = Math.min(300, window.innerWidth - 24);
+  const estimatedHeight = mode === "bulk" ? 390 : 320;
+  const left = Math.max(12, Math.min(anchor.left, window.innerWidth - width - 12));
+  const top =
+    anchor.bottom + estimatedHeight <= window.innerHeight - 12
+      ? anchor.bottom + 6
+      : Math.max(12, anchor.top - estimatedHeight - 6);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    function closeOnOutsidePointer(event: MouseEvent) {
+      if (!popoverRef.current?.contains(event.target as Node)) onClose();
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    function closeOnViewportChange() {
+      onClose();
+    }
+    document.addEventListener("mousedown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("resize", closeOnViewportChange);
+    window.addEventListener("scroll", closeOnViewportChange, true);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", closeOnViewportChange);
+      window.removeEventListener("scroll", closeOnViewportChange, true);
+    };
+  }, [onClose]);
+
+  function togglePendingTag(tag: string) {
+    setPendingTags((current) =>
+      current.includes(tag)
+        ? current.filter((item) => item !== tag)
+        : cleanUiTags([...current, tag]),
+    );
+  }
+
+  function chooseTag(tag: string) {
+    if (mode === "single") {
+      void onSingleSelect(tag);
+      return;
+    }
+    togglePendingTag(tag);
+    setQuery("");
+  }
+
+  function submitTypedTag() {
+    if (!normalizedQuery || existingSet.has(normalizedQuery)) return;
+    if (mode === "single") {
+      void onSingleSelect(normalizedQuery);
+      return;
+    }
+    setPendingTags((current) => cleanUiTags([...current, normalizedQuery]));
+    setQuery("");
+  }
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      className="tag-picker fixed z-[80] overflow-hidden rounded-md border border-border bg-white shadow-xl"
+      style={{ left, top, width }}
+      role="dialog"
+      aria-label={mode === "single" ? "Add tag to skill" : "Add tags to selected skills"}
+    >
+      <div className="border-b border-border p-2">
+        <div className="relative">
+          <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <input
+            ref={inputRef}
+            aria-label="Search or create tags"
+            autoComplete="off"
+            className="h-9 w-full rounded-md border border-input bg-white pl-8 pr-3 text-sm"
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                submitTypedTag();
+              }
+            }}
+            placeholder="Search or create a tag..."
+            value={query}
+          />
+        </div>
+      </div>
+      {mode === "bulk" && pendingTags.length > 0 && (
+        <div className="flex max-h-20 flex-wrap gap-1.5 overflow-auto border-b border-border bg-slate-50 p-2">
+          {pendingTags.map((tag) => (
+            <button
+              key={tag}
+              className="tag-chip inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-0.5 text-xs"
+              onClick={() => togglePendingTag(tag)}
+              style={tagToneStyle(tag)}
+              title={`Remove ${tag} from the tags waiting to be added.`}
+              type="button"
+            >
+              <span className="truncate">{tag}</span>
+              <X aria-hidden="true" className="h-3 w-3" />
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="max-h-56 overflow-y-auto py-1">
+        {canCreate && (
+          <button
+            className="tag-picker-option flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-cyan-50"
+            onClick={submitTypedTag}
+            type="button"
+          >
+            <Plus aria-hidden="true" className="h-4 w-4 text-[var(--sm-link)]" />
+            <span className="min-w-0 truncate">Create “{normalizedQuery}”</span>
+          </button>
+        )}
+        {filteredTags.map((tag) => {
+          const pending = pendingTags.includes(tag);
+          return (
+            <button
+              key={tag}
+              className="tag-picker-option flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-cyan-50"
+              onClick={() => chooseTag(tag)}
+              type="button"
+            >
+              <span className="tag-chip min-w-0 truncate rounded-md border px-2 py-0.5 text-xs" style={tagToneStyle(tag)}>
+                {tag}
+              </span>
+              {mode === "bulk" && pending && <Check aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--sm-enabled)]" />}
+            </button>
+          );
+        })}
+        {!canCreate && filteredTags.length === 0 && (
+          <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+            {mode === "single" ? "No additional tags match." : "No tags match this search."}
+          </div>
+        )}
+      </div>
+      {mode === "bulk" && (
+        <div className="flex items-center justify-between gap-3 border-t border-border bg-slate-50 p-2">
+          <span className="truncate text-xs text-muted-foreground">
+            {pendingTags.length} {pendingTags.length === 1 ? "tag" : "tags"} selected
+          </span>
+          <Button
+            disabled={pendingTags.length === 0 || selectedCount === 0}
+            onClick={() => void onBulkSubmit(pendingTags)}
+            title="Append the selected tags to every selected skill, keeping all tags already assigned."
+          >
+            Add to {selectedCount} {selectedCount === 1 ? "Skill" : "Skills"}
+          </Button>
+        </div>
+      )}
+    </div>,
+    document.body,
   );
 }
 
@@ -2485,13 +3013,26 @@ function normalizeSkillColumnWidths(value: unknown): SkillColumnWidths {
       widths[key] = Math.max(MIN_SKILL_COLUMN_WIDTHS[key], next);
     }
   }
-  const total = skillColumnKeys.reduce((sum, key) => sum + widths[key], 0);
-  if (total <= 0) {
-    return DEFAULT_SKILL_COLUMN_WIDTHS;
-  }
-  const normalized = { ...widths };
-  for (const key of skillColumnKeys) {
-    normalized[key] = (widths[key] / total) * 100;
+  const normalized = { ...DEFAULT_SKILL_COLUMN_WIDTHS };
+  let remainingKeys = [...skillColumnKeys] as SkillColumnKey[];
+  let remainingPercent = 100;
+  while (remainingKeys.length > 0) {
+    const totalWeight = remainingKeys.reduce((sum, key) => sum + widths[key], 0);
+    if (totalWeight <= 0) return DEFAULT_SKILL_COLUMN_WIDTHS;
+    const belowMinimum = remainingKeys.filter(
+      (key) => (widths[key] / totalWeight) * remainingPercent < MIN_SKILL_COLUMN_WIDTHS[key],
+    );
+    if (belowMinimum.length === 0) {
+      for (const key of remainingKeys) {
+        normalized[key] = (widths[key] / totalWeight) * remainingPercent;
+      }
+      break;
+    }
+    for (const key of belowMinimum) {
+      normalized[key] = MIN_SKILL_COLUMN_WIDTHS[key];
+      remainingPercent -= MIN_SKILL_COLUMN_WIDTHS[key];
+    }
+    remainingKeys = remainingKeys.filter((key) => !belowMinimum.includes(key));
   }
   return normalized;
 }

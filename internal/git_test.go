@@ -34,6 +34,36 @@ func TestPullShallowRepositoryAcrossMultipleRemoteCommits(t *testing.T) {
 	}
 }
 
+func TestPullShallowRepositoryRecoversDisconnectedDepthOneTips(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	root := t.TempDir()
+	remote, writer := createGitRemote(t, root)
+	checkout, _, err := cloneGitRepository(context.Background(), "file://"+remote, root, "checkout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := 1; index <= 5; index++ {
+		appendCommitAndPush(t, writer, index)
+	}
+	runGit(t, checkout, "fetch", "--depth=1", "origin", "+refs/heads/main:refs/remotes/origin/main")
+	mergeBase := exec.Command("git", "-C", checkout, "merge-base", "HEAD", "origin/main")
+	if err := mergeBase.Run(); err == nil {
+		t.Fatal("expected depth-one tips to have no visible merge base before recovery")
+	}
+	message, err := pullGitRepository(context.Background(), checkout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(message, "Recovered shallow history") {
+		t.Fatalf("expected shallow recovery message, got %q", message)
+	}
+	if head, upstream := runGit(t, checkout, "rev-parse", "HEAD"), runGit(t, checkout, "rev-parse", "origin/main"); head != upstream {
+		t.Fatalf("expected recovered checkout to fast-forward to upstream, head=%s upstream=%s", head, upstream)
+	}
+}
+
 func TestPullShallowRepositoryRefusesRealLocalDivergence(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
@@ -54,6 +84,68 @@ func TestPullShallowRepositoryRefusesRealLocalDivergence(t *testing.T) {
 	appendCommitAndPush(t, writer, 1)
 	if _, err := pullGitRepository(context.Background(), checkout); err == nil || !strings.Contains(err.Error(), "Not possible to fast-forward") {
 		t.Fatalf("expected local divergence to be refused, got %v", err)
+	}
+}
+
+func TestPullPreservesUnrelatedLocalChanges(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	root := t.TempDir()
+	remote, writer := createGitRemote(t, root)
+	if err := os.WriteFile(filepath.Join(writer, "untouched"), []byte("remote\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, writer, "add", "untouched")
+	runGit(t, writer, "commit", "-m", "add untouched file")
+	runGit(t, writer, "push", "origin", "main")
+	checkout, _, err := cloneGitRepository(context.Background(), "file://"+remote, root, "checkout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(checkout, "untouched"), []byte("local change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	appendCommitAndPush(t, writer, 1)
+	if _, err := pullGitRepository(context.Background(), checkout); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(checkout, "untouched"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "local change\n" {
+		t.Fatalf("expected unrelated local change to be preserved, got %q", content)
+	}
+}
+
+func TestPullRefusesOverlappingLocalChangesWithoutMovingHead(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	root := t.TempDir()
+	remote, writer := createGitRemote(t, root)
+	checkout, _, err := cloneGitRepository(context.Background(), "file://"+remote, root, "checkout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	localHead := runGit(t, checkout, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(checkout, "file"), []byte("local change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	appendCommitAndPush(t, writer, 1)
+	if _, err := pullGitRepository(context.Background(), checkout); err == nil || !strings.Contains(err.Error(), "blocked by local changes") {
+		t.Fatalf("expected overlapping local change to block update, got %v", err)
+	}
+	if head := runGit(t, checkout, "rev-parse", "HEAD"); head != localHead {
+		t.Fatalf("expected blocked update to keep HEAD at %s, got %s", localHead, head)
+	}
+	content, err := os.ReadFile(filepath.Join(checkout, "file"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "local change\n" {
+		t.Fatalf("expected blocked update to preserve local content, got %q", content)
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -24,6 +25,8 @@ import (
 type Service struct {
 	logger func(string, ...any)
 }
+
+const maxSkillFilePreviewBytes int64 = 512 * 1024
 
 func NewService() *Service {
 	return &Service{}
@@ -1050,6 +1053,136 @@ func (s *Service) ListSkillFiles(ctx context.Context, skill Skill, relativeDir s
 		return nil, errors.New("skill source path is unavailable")
 	}
 	return listLocalSkillEntries(skill.SourcePath, cleanDir)
+}
+
+func (s *Service) ReadSkillFilePreview(ctx context.Context, skill Skill, relativeFile string) (SkillFilePreview, error) {
+	cleanFile, err := cleanSkillRelativeFile(relativeFile)
+	if err != nil {
+		return SkillFilePreview{}, err
+	}
+	var content []byte
+	if skill.RepoPath != "" && skill.RepoSubpath != "" {
+		content, err = readGitSkillFile(ctx, skill.RepoPath, skill.RepoSubpath, cleanFile)
+	} else {
+		if skill.SourcePath == "" {
+			return SkillFilePreview{}, errors.New("skill source path is unavailable")
+		}
+		content, err = readLocalSkillFile(skill.SourcePath, cleanFile)
+	}
+	if err != nil {
+		if errors.Is(err, errSkillPreviewTooLarge) {
+			return SkillFilePreview{
+				Path:   cleanFile,
+				Reason: "Files larger than 512 KB cannot be previewed.",
+			}, nil
+		}
+		return SkillFilePreview{}, err
+	}
+	if bytes.IndexByte(content, 0) >= 0 || !utf8.Valid(content) {
+		return SkillFilePreview{
+			Path:   cleanFile,
+			Reason: "Binary files cannot be previewed.",
+		}, nil
+	}
+	return SkillFilePreview{
+		Path:        cleanFile,
+		Previewable: true,
+		Content:     string(content),
+	}, nil
+}
+
+var errSkillPreviewTooLarge = errors.New("skill file is too large to preview")
+
+func cleanSkillRelativeFile(relativeFile string) (string, error) {
+	relativeFile = strings.TrimSpace(filepath.ToSlash(relativeFile))
+	if relativeFile == "" || relativeFile == "." {
+		return "", errors.New("skill file path is required")
+	}
+	cleaned := path.Clean(relativeFile)
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") || strings.HasPrefix(cleaned, "/") {
+		return "", fmt.Errorf("invalid relative file: %s", relativeFile)
+	}
+	return cleaned, nil
+}
+
+func readLocalSkillFile(sourcePath, relativeFile string) ([]byte, error) {
+	sourceRoot, err := filepath.EvalSymlinks(sourcePath)
+	if err != nil {
+		return nil, err
+	}
+	sourceRoot, err = filepath.Abs(sourceRoot)
+	if err != nil {
+		return nil, err
+	}
+	targetPath, err := filepath.EvalSymlinks(filepath.Join(sourceRoot, filepath.FromSlash(relativeFile)))
+	if err != nil {
+		return nil, err
+	}
+	targetPath, err = filepath.Abs(targetPath)
+	if err != nil {
+		return nil, err
+	}
+	rel, err := filepath.Rel(sourceRoot, targetPath)
+	if err != nil {
+		return nil, err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("skill file escapes source folder: %s", relativeFile)
+	}
+	info, err := os.Stat(targetPath)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("skill file is not a regular file: %s", relativeFile)
+	}
+	if info.Size() > maxSkillFilePreviewBytes {
+		return nil, errSkillPreviewTooLarge
+	}
+	file, err := os.Open(targetPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	content, err := io.ReadAll(io.LimitReader(file, maxSkillFilePreviewBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(content)) > maxSkillFilePreviewBytes {
+		return nil, errSkillPreviewTooLarge
+	}
+	return content, nil
+}
+
+func readGitSkillFile(ctx context.Context, repoPath, repoSubpath, relativeFile string) ([]byte, error) {
+	if _, err := exec.LookPath("git"); err != nil {
+		return nil, err
+	}
+	objectPath := repoObjectPath(repoSubpath, relativeFile)
+	object := "HEAD:" + objectPath
+	objectType, err := exec.CommandContext(ctx, "git", "-C", repoPath, "cat-file", "-t", object).Output()
+	if err != nil {
+		return nil, fmt.Errorf("skill file is unavailable: %s", relativeFile)
+	}
+	if strings.TrimSpace(string(objectType)) != "blob" {
+		return nil, fmt.Errorf("skill file is not a regular file: %s", relativeFile)
+	}
+	rawSize, err := exec.CommandContext(ctx, "git", "-C", repoPath, "cat-file", "-s", object).Output()
+	if err != nil {
+		return nil, fmt.Errorf("could not inspect skill file: %s", relativeFile)
+	}
+	size, err := strconv.ParseInt(strings.TrimSpace(string(rawSize)), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("could not inspect skill file size: %s", relativeFile)
+	}
+	if size > maxSkillFilePreviewBytes {
+		return nil, errSkillPreviewTooLarge
+	}
+	content, err := exec.CommandContext(ctx, "git", "-C", repoPath, "show", object).Output()
+	if err != nil {
+		return nil, fmt.Errorf("could not read skill file: %s", relativeFile)
+	}
+	return content, nil
 }
 
 func cleanSkillRelativeDir(relativeDir string) (string, error) {

@@ -4,6 +4,8 @@ import {skillmgr} from '../models';
 
 export function AddRepository(arg1:string):Promise<skillmgr.Inventory>;
 
+export function AddSkillTags(arg1:Array<string>,arg2:Array<string>):Promise<skillmgr.BulkTagResult>;
+
 export function AddSource(arg1:string):Promise<skillmgr.Inventory>;
 
 export function BrowseForCloneParent():Promise<string>;
@@ -20,6 +22,8 @@ export function CloneRepository(arg1:string,arg2:string,arg3:string,arg4:string)
 
 export function DisableSkill(arg1:string):Promise<skillmgr.Inventory>;
 
+export function DisableSkills(arg1:Array<string>):Promise<skillmgr.BulkDisableResult>;
+
 export function EnableSkill(arg1:string):Promise<skillmgr.Inventory>;
 
 export function EnableSkills(arg1:Array<string>):Promise<skillmgr.BulkEnableResult>;
@@ -32,6 +36,8 @@ export function GetInventory():Promise<skillmgr.Inventory>;
 
 export function ListSkillFiles(arg1:string,arg2:string):Promise<Array<skillmgr.SkillFileEntry>>;
 
+export function OpenInTerminal(arg1:string):Promise<void>;
+
 export function OpenInVSCode(arg1:string):Promise<void>;
 
 export function OpenPath(arg1:string):Promise<void>;
@@ -41,6 +47,8 @@ export function PullRepository(arg1:string):Promise<skillmgr.PullSourceResult>;
 export function PullSource(arg1:string):Promise<skillmgr.PullSourceResult>;
 
 export function ReadSkillEnvFile(arg1:string):Promise<string>;
+
+export function ReadSkillFilePreview(arg1:string,arg2:string):Promise<skillmgr.SkillFilePreview>;
 
 export function RemoveRepository(arg1:string):Promise<skillmgr.Inventory>;
 

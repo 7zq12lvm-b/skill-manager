@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { skillmgr } from "../../wailsjs/go/models";
 import {
+  AddSkillTags,
   AddSource,
   BrowseForCloneParent,
   BrowseForExistingRepository,
@@ -9,16 +10,19 @@ import {
   BrowseForTarget,
   CloneRepository,
   DisableSkill,
+  DisableSkills,
   EnableSkill,
   EnableSkills,
   GenerateSkillProfile,
   GetInventory,
   ListSkillFiles,
+  OpenInTerminal,
   OpenInVSCode,
   OpenPath,
   PullRepository,
   PullSource,
   ReadSkillEnvFile,
+  ReadSkillFilePreview,
   RemoveSource,
   RenameRepository,
   RenameSource,
@@ -58,6 +62,7 @@ type SkillStore = {
   enableSkill: (skillId: string) => Promise<void>;
   enableSkills: (skillIds: string[]) => Promise<void>;
   disableSkill: (skillId: string) => Promise<void>;
+  disableSkills: (skillIds: string[]) => Promise<void>;
   cloneRepository: (repoId: string, cloneUrl: string, parentDir: string, folderName: string) => Promise<boolean>;
   useExistingRepository: (repoId: string) => Promise<void>;
   resolveConflict: (skillId: string) => Promise<void>;
@@ -67,7 +72,10 @@ type SkillStore = {
   readSkillEnv: (skillId: string) => Promise<string>;
   saveSkillEnv: (skillId: string, content: string) => Promise<void>;
   saveSkillTags: (skillId: string, tags: string[]) => Promise<void>;
+  addSkillTags: (skillIds: string[], tags: string[]) => Promise<void>;
   listSkillFiles: (skillId: string, relativeDir: string) => Promise<skillmgr.SkillFileEntry[]>;
+  readSkillFilePreview: (skillId: string, relativeFile: string) => Promise<skillmgr.SkillFilePreview>;
+  openInTerminal: (path: string) => Promise<void>;
   openInVSCode: (path: string) => Promise<void>;
   openPath: (path: string) => Promise<void>;
   selectSkill: (skillId?: string) => void;
@@ -240,6 +248,25 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
     }
   },
   disableSkill: async (skillId) => runWithInventory(set, () => DisableSkill(skillId), "Disabling skill..."),
+  disableSkills: async (skillIds) => {
+    set({ loading: true, loadingLabel: "Disabling selected skills...", error: undefined });
+    await waitForPaint();
+    try {
+      const result = await DisableSkills(skillIds);
+      const failed = result.failed?.length ? `, ${result.failed.length} failed` : "";
+      set({
+        inventory: result.inventory,
+        loading: false,
+        loadingLabel: undefined,
+        pullResults: {
+          ...get().pullResults,
+          bulk: `Disabled ${result.disabled}, already disabled ${result.alreadyDisabled}, skipped ${result.skipped}${failed}.`,
+        },
+      });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
+    }
+  },
   cloneRepository: async (repoId, cloneUrl, parentDir, folderName) => {
     set({ loading: true, loadingLabel: "Cloning repository...", error: undefined });
     await waitForPaint();
@@ -303,6 +330,25 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
   },
   saveSkillTags: async (skillId, tags) =>
     runWithInventory(set, () => SaveSkillTags(skillId, tags), "Saving tags..."),
+  addSkillTags: async (skillIds, tags) => {
+    set({ loading: true, loadingLabel: "Adding tags to selected skills...", error: undefined });
+    await waitForPaint();
+    try {
+      const result = await AddSkillTags(skillIds, tags);
+      const failed = result.failed?.length ? `, ${result.failed.length} failed` : "";
+      set({
+        inventory: result.inventory,
+        loading: false,
+        loadingLabel: undefined,
+        pullResults: {
+          ...get().pullResults,
+          bulk: `Tagged ${result.updated}, already tagged ${result.unchanged}, skipped ${result.skipped}${failed}.`,
+        },
+      });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
+    }
+  },
   listSkillFiles: async (skillId, relativeDir) => {
     try {
       set({ error: undefined });
@@ -310,6 +356,14 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });
       return [];
+    }
+  },
+  readSkillFilePreview: async (skillId, relativeFile) => {
+    try {
+      return await ReadSkillFilePreview(skillId, relativeFile);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error) });
+      throw error;
     }
   },
   openPath: async (path) => {
@@ -322,6 +376,13 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
   openInVSCode: async (path) => {
     try {
       await OpenInVSCode(path);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error) });
+    }
+  },
+  openInTerminal: async (path) => {
+    try {
+      await OpenInTerminal(path);
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });
     }

@@ -6,6 +6,10 @@ export function AddRepository(arg1) {
   return window['go']['main']['App']['AddRepository'](arg1);
 }
 
+export function AddSkillTags(arg1, arg2) {
+  return window['go']['main']['App']['AddSkillTags'](arg1, arg2);
+}
+
 export function AddSource(arg1) {
   return window['go']['main']['App']['AddSource'](arg1);
 }
@@ -38,6 +42,10 @@ export function DisableSkill(arg1) {
   return window['go']['main']['App']['DisableSkill'](arg1);
 }
 
+export function DisableSkills(arg1) {
+  return window['go']['main']['App']['DisableSkills'](arg1);
+}
+
 export function EnableSkill(arg1) {
   return window['go']['main']['App']['EnableSkill'](arg1);
 }
@@ -62,6 +70,10 @@ export function ListSkillFiles(arg1, arg2) {
   return window['go']['main']['App']['ListSkillFiles'](arg1, arg2);
 }
 
+export function OpenInTerminal(arg1) {
+  return window['go']['main']['App']['OpenInTerminal'](arg1);
+}
+
 export function OpenInVSCode(arg1) {
   return window['go']['main']['App']['OpenInVSCode'](arg1);
 }
@@ -80,6 +92,10 @@ export function PullSource(arg1) {
 
 export function ReadSkillEnvFile(arg1) {
   return window['go']['main']['App']['ReadSkillEnvFile'](arg1);
+}
+
+export function ReadSkillFilePreview(arg1, arg2) {
+  return window['go']['main']['App']['ReadSkillFilePreview'](arg1, arg2);
 }
 
 export function RemoveRepository(arg1) {

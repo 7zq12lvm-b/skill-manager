@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -158,6 +159,27 @@ func (a *App) ListSkillFiles(skillID string, relativeDir string) ([]skillmgr.Ski
 	}
 	a.debugLogf("ListSkillFiles done skill=%q dir=%q entries=%d", skillID, relativeDir, len(entries))
 	return entries, nil
+}
+
+func (a *App) ReadSkillFilePreview(skillID string, relativeFile string) (skillmgr.SkillFilePreview, error) {
+	a.debugLogf("ReadSkillFilePreview begin skill=%q file=%q", skillID, relativeFile)
+	a.mu.Lock()
+	selected, err := a.findSkillLocked(skillID)
+	ctx := a.ctx
+	a.mu.Unlock()
+	if err != nil {
+		return skillmgr.SkillFilePreview{}, err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	preview, err := a.service.ReadSkillFilePreview(ctx, selected, relativeFile)
+	if err != nil {
+		a.debugLogf("ReadSkillFilePreview error: %v", err)
+		return skillmgr.SkillFilePreview{}, err
+	}
+	a.debugLogf("ReadSkillFilePreview done skill=%q file=%q previewable=%t", skillID, preview.Path, preview.Previewable)
+	return preview, nil
 }
 
 func (a *App) RescanAll() (skillmgr.Inventory, error) {
@@ -497,7 +519,8 @@ func (a *App) EnableSkills(skillIDs []string) (skillmgr.BulkEnableResult, error)
 		return skillmgr.BulkEnableResult{}, errors.New("sync folder is not configured")
 	}
 	result := skillmgr.BulkEnableResult{}
-	for _, skillID := range skillIDs {
+	records := make([]skillmgr.SyncSkillRecord, 0, len(skillIDs))
+	for _, skillID := range uniqueSkillIDs(skillIDs) {
 		skill, err := a.findSkillLocked(skillID)
 		if err != nil {
 			result.Skipped++
@@ -512,17 +535,18 @@ func (a *App) EnableSkills(skillIDs []string) (skillmgr.BulkEnableResult, error)
 			result.Skipped++
 			continue
 		}
-		if err := store.UpsertSkill(syncRecordForSkill(skill, true)); err != nil {
-			result.Skipped++
-			result.Failed = append(result.Failed, skill.Name+": "+err.Error())
-			continue
-		}
 		if err := a.service.Enable(a.ctx, a.config, skill); err != nil {
 			result.Skipped++
 			result.Failed = append(result.Failed, skill.Name+": "+err.Error())
 			continue
 		}
+		records = append(records, syncRecordForSkill(skill, true))
 		result.Enabled++
+	}
+	if len(records) > 0 {
+		if err := store.UpsertSkills(records); err != nil {
+			return skillmgr.BulkEnableResult{}, err
+		}
 	}
 	if err := a.refreshLocked(a.ctx); err != nil {
 		return skillmgr.BulkEnableResult{}, err
@@ -647,6 +671,50 @@ func (a *App) DisableSkill(skillID string) (skillmgr.Inventory, error) {
 	return a.inventory, nil
 }
 
+func (a *App) DisableSkills(skillIDs []string) (skillmgr.BulkDisableResult, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	store := a.currentSyncStoreLocked()
+	if store == nil {
+		return skillmgr.BulkDisableResult{}, errors.New("sync folder is not configured")
+	}
+	result := skillmgr.BulkDisableResult{}
+	records := make([]skillmgr.SyncSkillRecord, 0, len(skillIDs))
+	for _, skillID := range uniqueSkillIDs(skillIDs) {
+		skill, err := a.findSkillLocked(skillID)
+		if err != nil {
+			result.Skipped++
+			result.Failed = append(result.Failed, skillID+": "+err.Error())
+			continue
+		}
+		if !skill.IsActive {
+			result.AlreadyDisabled++
+			continue
+		}
+		if !skill.IsSynced || skill.SourcePath == "" {
+			result.Skipped++
+			continue
+		}
+		if err := a.service.Disable(a.ctx, a.config, skill); err != nil {
+			result.Skipped++
+			result.Failed = append(result.Failed, skill.Name+": "+err.Error())
+			continue
+		}
+		records = append(records, syncRecordForSkill(skill, false))
+		result.Disabled++
+	}
+	if len(records) > 0 {
+		if err := store.UpsertSkills(records); err != nil {
+			return skillmgr.BulkDisableResult{}, err
+		}
+	}
+	if err := a.refreshLocked(a.ctx); err != nil {
+		return skillmgr.BulkDisableResult{}, err
+	}
+	result.Inventory = a.inventory
+	return result, nil
+}
+
 func (a *App) ResolveConflict(skillID string) (skillmgr.Inventory, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -721,6 +789,52 @@ func (a *App) SaveSkillTags(skillID string, tags []string) (skillmgr.Inventory, 
 	return a.inventory, nil
 }
 
+func (a *App) AddSkillTags(skillIDs []string, tags []string) (skillmgr.BulkTagResult, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cleanTags := mergeSkillTags(nil, tags)
+	if len(cleanTags) == 0 {
+		return skillmgr.BulkTagResult{}, errors.New("at least one tag is required")
+	}
+	store := a.currentSyncStoreLocked()
+	if store == nil {
+		return skillmgr.BulkTagResult{}, errors.New("sync folder is not configured")
+	}
+	result := skillmgr.BulkTagResult{}
+	records := make([]skillmgr.SyncSkillRecord, 0, len(skillIDs))
+	for _, skillID := range uniqueSkillIDs(skillIDs) {
+		skill, err := a.findSkillLocked(skillID)
+		if err != nil {
+			result.Skipped++
+			result.Failed = append(result.Failed, skillID+": "+err.Error())
+			continue
+		}
+		if !skill.IsSynced {
+			result.Skipped++
+			continue
+		}
+		merged := mergeSkillTags(skill.Tags, cleanTags)
+		if stringSlicesEqual(merged, mergeSkillTags(nil, skill.Tags)) {
+			result.Unchanged++
+			continue
+		}
+		record := syncRecordForSkill(skill, skill.DesiredEnabled != nil && *skill.DesiredEnabled)
+		record.Tags = merged
+		records = append(records, record)
+		result.Updated++
+	}
+	if len(records) > 0 {
+		if err := store.UpsertSkills(records); err != nil {
+			return skillmgr.BulkTagResult{}, err
+		}
+	}
+	if err := a.refreshLocked(a.ctx); err != nil {
+		return skillmgr.BulkTagResult{}, err
+	}
+	result.Inventory = a.inventory
+	return result, nil
+}
+
 func bulkEnableEligible(skill skillmgr.Skill) bool {
 	if !skill.IsSynced || skill.SourcePath == "" {
 		return false
@@ -731,6 +845,49 @@ func bulkEnableEligible(skill skillmgr.Skill) bool {
 	default:
 		return true
 	}
+}
+
+func uniqueSkillIDs(skillIDs []string) []string {
+	seen := make(map[string]bool, len(skillIDs))
+	unique := make([]string, 0, len(skillIDs))
+	for _, skillID := range skillIDs {
+		skillID = strings.TrimSpace(skillID)
+		if skillID == "" || seen[skillID] {
+			continue
+		}
+		seen[skillID] = true
+		unique = append(unique, skillID)
+	}
+	return unique
+}
+
+func mergeSkillTags(existing, additions []string) []string {
+	seen := make(map[string]bool, len(existing)+len(additions))
+	merged := make([]string, 0, len(existing)+len(additions))
+	for _, values := range [][]string{existing, additions} {
+		for _, tag := range values {
+			tag = strings.TrimSpace(tag)
+			if tag == "" || seen[tag] {
+				continue
+			}
+			seen[tag] = true
+			merged = append(merged, tag)
+		}
+	}
+	sort.Strings(merged)
+	return merged
+}
+
+func stringSlicesEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *App) OpenPath(path string) error {
@@ -760,6 +917,34 @@ func (a *App) OpenInVSCode(path string) error {
 		return errors.New("VS Code command not found")
 	}
 	return exec.Command("code", path).Start()
+}
+
+func (a *App) OpenInTerminal(path string) error {
+	if err := validateTerminalDirectory(path); err != nil {
+		return err
+	}
+	if runtime.GOOS != "darwin" {
+		return errors.New("Terminal.app is only available on macOS")
+	}
+	if err := exec.Command("open", "-b", "com.apple.Terminal", path).Run(); err != nil {
+		return fmt.Errorf("open Terminal.app: %w", err)
+	}
+	return nil
+}
+
+func validateTerminalDirectory(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return errors.New("terminal directory is required")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("terminal directory is unavailable: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("terminal path is not a directory: %s", path)
+	}
+	return nil
 }
 
 func (a *App) refreshLocked(ctx context.Context) error {

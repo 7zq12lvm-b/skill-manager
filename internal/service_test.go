@@ -1,11 +1,98 @@
 package skillmgr
 
 import (
+	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
+
+func TestReadSkillFilePreviewClassifiesLocalFiles(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "skill")
+	mustWrite(t, filepath.Join(source, "notes.txt"), "你好, skill manager\n")
+	if err := os.WriteFile(filepath.Join(source, "image.bin"), []byte{0x89, 0x50, 0x00, 0xff}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "invalid-utf8.bin"), []byte{0xff, 0xfe}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "large.txt"), bytes.Repeat([]byte("a"), int(maxSkillFilePreviewBytes)+1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(root, "outside.txt")
+	mustWrite(t, outside, "outside\n")
+	if err := os.Symlink(outside, filepath.Join(source, "outside-link.txt")); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService()
+	skill := Skill{ID: "skill", SourcePath: source}
+	preview, err := service.ReadSkillFilePreview(context.Background(), skill, "notes.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preview.Previewable || preview.Content != "你好, skill manager\n" {
+		t.Fatalf("unexpected text preview: %#v", preview)
+	}
+	binary, err := service.ReadSkillFilePreview(context.Background(), skill, "image.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binary.Previewable || binary.Reason == "" || binary.Content != "" {
+		t.Fatalf("expected binary file to be rejected, got %#v", binary)
+	}
+	invalidUTF8, err := service.ReadSkillFilePreview(context.Background(), skill, "invalid-utf8.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if invalidUTF8.Previewable || invalidUTF8.Reason == "" || invalidUTF8.Content != "" {
+		t.Fatalf("expected invalid UTF-8 file to be rejected, got %#v", invalidUTF8)
+	}
+	large, err := service.ReadSkillFilePreview(context.Background(), skill, "large.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if large.Previewable || large.Reason == "" {
+		t.Fatalf("expected large file to be rejected, got %#v", large)
+	}
+	if _, err := service.ReadSkillFilePreview(context.Background(), skill, "../outside.txt"); err == nil {
+		t.Fatal("expected parent traversal to be rejected")
+	}
+	if _, err := service.ReadSkillFilePreview(context.Background(), skill, "outside-link.txt"); err == nil {
+		t.Fatal("expected symlink escape to be rejected")
+	}
+}
+
+func TestReadSkillFilePreviewUsesGitHead(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	runGit(t, root, "init", repo)
+	runGit(t, repo, "config", "user.email", "test@example.com")
+	runGit(t, repo, "config", "user.name", "Test")
+	mustWrite(t, filepath.Join(repo, "skills", "demo", "notes.txt"), "committed\n")
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-m", "add preview")
+	mustWrite(t, filepath.Join(repo, "skills", "demo", "notes.txt"), "working tree\n")
+
+	preview, err := NewService().ReadSkillFilePreview(context.Background(), Skill{
+		ID:          "demo",
+		RepoPath:    repo,
+		RepoSubpath: "skills/demo",
+		SourcePath:  filepath.Join(repo, "skills", "demo"),
+	}, "notes.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preview.Previewable || preview.Content != "committed\n" {
+		t.Fatalf("expected committed Git content, got %#v", preview)
+	}
+}
 
 func TestScanDiscoversFirstLevelSkillsAndDerivesStatuses(t *testing.T) {
 	root := t.TempDir()
