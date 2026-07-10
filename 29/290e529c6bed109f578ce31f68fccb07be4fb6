@@ -1,0 +1,84 @@
+frontend/wailsjs/go/main/App.js
+  s_fb768bf33d69de::t_5746d3c622cd8e 9-12,45-46,97-98
+  s_fb768bf33d69de::t_3405a7e177d0b0 47,73-76,99
+  s_fb768bf33d69de::t_f6e16fbbc9ec36 48,100
+internal/types.go
+  s_fb768bf33d69de::t_f16ee8e539b20d 109-124,218-223
+  s_fb768bf33d69de::t_146ecb2ecfcad9 224
+app.go
+  s_fb768bf33d69de::t_b321d8dba85224 11,164-184,522-523,543,546-550,674-717,792-837,850-890
+  s_fb768bf33d69de::t_41e384caa7fa1d 891,922-949
+  s_fb768bf33d69de::t_726a18bc8598db 892
+internal/git_test.go
+  s_fb768bf33d69de::t_8db382ea9d60ca 90-151
+  s_fb768bf33d69de::t_6610e442945f31 37-66
+internal/service_test.go
+  s_fb768bf33d69de::t_b0cbd8e2591591 19-21,46-52
+  s_fb768bf33d69de::t_27560ff3e51652 4,7,12-18,22-45,53-95
+  s_fb768bf33d69de::t_87be42b5b7b3b5 96
+internal/sync_store.go
+  s_fb768bf33d69de::t_f16ee8e539b20d 133-136,141-149
+frontend/wailsjs/go/models.ts
+  s_fb768bf33d69de::t_7b59bbefa177a4 507,511,520,583,587,596,732,736
+  s_fb768bf33d69de::t_5746d3c622cd8e 501-506,508-510,512-519,521-538,577-582,584-586,588-595,597-614,727-731,733-735,737-744
+internal/service.go
+  s_fb768bf33d69de::t_b0cbd8e2591591 1142-1154
+  s_fb768bf33d69de::t_c094ea59aee608 20,29-30,1058-1141,1155-1186
+  s_fb768bf33d69de::t_1b59c8a7ffd2e8 1187
+frontend/src/store/useSkillStore.ts
+  s_fb768bf33d69de::t_8a2704bfc0c63b 4,13,25,65,75,77,251-269,333-351,361-368,386-389
+  s_fb768bf33d69de::t_6d70462f8baf7c 19,78,383-385
+app_test.go
+  s_fb768bf33d69de::t_27560ff3e51652 5,83-153
+  s_fb768bf33d69de::t_41e384caa7fa1d 154-155,157-172
+  s_fb768bf33d69de::t_2bf751a58e3835 156
+docs/superpowers/specs/2026-07-10-shared-source-catalog-design.md
+  s_fb768bf33d69de::t_19da3af068ebd0 131
+  s_fb768bf33d69de::t_01cac7aec2ad3b 85,88,91-101,132-134
+frontend/src/App.tsx
+  s_fb768bf33d69de::t_de7430a9ce80f8 2159-2161,2167
+  s_fb768bf33d69de::t_8fc7c9ba0ccbca 3016-3035
+  s_fb768bf33d69de::t_12049b85f8b4fd 1307,1318-1340,1343-1360,1362-1397,1482-1487,1490-1496,1498,1500-1505
+  s_fb768bf33d69de::t_6d70462f8baf7c 22,137,884-894
+  s_fb768bf33d69de::t_83297d52c22ff7 646
+  s_fb768bf33d69de::t_aa6e723f5a5b43 353,1187-1224,1226-1227,1920,1926,1929,1956,1961-2158,2162-2166,2168-2174
+  s_fb768bf33d69de::t_196ebb29fe12da 643,650-651,657-658,664
+  s_fb768bf33d69de::t_03f6005d87daba 2,16-17,64,69-71,73-78,81-86,124,134,136,161-162,164,231-236,239-252,309-352
+  s_fb768bf33d69de::t_8f8a9d3adf4a43 1521-1522,1526-1527,1591,1594,1608-1609,1616-1617,1628-1639,1643,1679,1682
+  s_fb768bf33d69de::t_bcd72dc3d95f15 639,641-642,644-645,647-649,652-656,659-663,665-680,756-763,771-777,807-818,831-836,908,913-930
+  s_fb768bf33d69de::t_9c8193ca5deedc 354
+  s_fb768bf33d69de::t_b9d7649e97e528 931
+  s_fb768bf33d69de::t_d5a512e4623d25 1225
+  s_fb768bf33d69de::t_bae5eecbed7906 1228
+  s_fb768bf33d69de::t_bf885296d2b5e4 2175
+internal/git.go
+  s_fb768bf33d69de::t_6610e442945f31 68,71,75,80-81,121-127,131-143,145
+  s_fb768bf33d69de::t_8db382ea9d60ca 41-67,69-70,72-74,76-79,82-120
+frontend/src/App.css
+  s_fb768bf33d69de::t_83297d52c22ff7 387,447-455
+  s_fb768bf33d69de::t_17f41233d5955a 321-339,383-386
+  s_fb768bf33d69de::t_8affe356b495a9 388
+  s_fb768bf33d69de::t_4c96edcf7dcdcf 456
+frontend/wailsjs/go/main/App.d.ts
+  s_fb768bf33d69de::t_5746d3c622cd8e 7-8,25-26,51
+  s_fb768bf33d69de::t_3405a7e177d0b0 39-40
+  s_fb768bf33d69de::t_dac148fa8bb010 52
+internal/sync_store_test.go
+  s_fb768bf33d69de::t_27560ff3e51652 62-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "29290e529c6bed109f578ce31f68fccb07be4fb6",
+  "prompts": {},
+  "sessions": {
+    "s_fb768bf33d69de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f45b7-c5a9-7e50-9541-5735c936dda3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
