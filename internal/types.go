@@ -11,28 +11,40 @@ const (
 type SkillStatus string
 
 const (
-	StatusSynced        SkillStatus = "synced"
+	StatusEnabled       SkillStatus = "enabled"
 	StatusDisabled      SkillStatus = "disabled"
 	StatusConflict      SkillStatus = "conflict"
 	StatusInvalid       SkillStatus = "invalid"
-	StatusMissing       SkillStatus = "missing"
 	StatusMissingSource SkillStatus = "missing-source"
 	StatusMissingPath   SkillStatus = "missing-path"
-	StatusNeedsApply    SkillStatus = "needs-apply"
-	StatusLocalOnly     SkillStatus = "local-only"
-	StatusSyncing       SkillStatus = "syncing"
 	StatusError         SkillStatus = "error"
 )
 
 type Config struct {
-	TargetDirs       []string            `json:"targetDirs"`
-	Sources          []SkillSourceConfig `json:"sources"`
-	Repositories     []RepositoryConfig  `json:"repositories,omitempty"`
-	Validation       ValidationConfig    `json:"validation"`
-	Scan             ScanConfig          `json:"scan"`
-	Sync             SyncConfig          `json:"sync"`
-	ConflictHandling string              `json:"conflictHandling"`
-	SourcePriority   []string            `json:"sourcePriority"`
+	Version          int                  `json:"version"`
+	TargetDirs       []string             `json:"targetDirs"`
+	Installations    []SourceInstallation `json:"installations"`
+	Sources          []SkillSourceConfig  `json:"-"`
+	Repositories     []RepositoryConfig   `json:"-"`
+	Validation       ValidationConfig     `json:"validation"`
+	Scan             ScanConfig           `json:"scan"`
+	Sync             SyncConfig           `json:"sync"`
+	ConflictHandling string               `json:"conflictHandling"`
+	SourcePriority   []string             `json:"sourcePriority"`
+}
+
+type SourceInstallation struct {
+	Provider string                    `json:"provider"`
+	SourceID string                    `json:"sourceId"`
+	Path     string                    `json:"path"`
+	Alias    string                    `json:"alias,omitempty"`
+	Enabled  bool                      `json:"enabled"`
+	Options  SourceInstallationOptions `json:"options,omitempty"`
+}
+
+type SourceInstallationOptions struct {
+	ScanRoots   []string `json:"scanRoots,omitempty"`
+	IgnorePaths []string `json:"ignorePaths,omitempty"`
 }
 
 type SkillSourceConfig struct {
@@ -70,16 +82,15 @@ type ScanConfig struct {
 }
 
 type Inventory struct {
-	Config           Config        `json:"config"`
-	Sources          []SkillSource `json:"sources"`
-	Repositories     []Repository  `json:"repositories,omitempty"`
-	Skills           []Skill       `json:"skills"`
-	Summary          Summary       `json:"summary"`
-	SyncConfigured   bool          `json:"syncConfigured"`
-	SyncPath         string        `json:"syncPath,omitempty"`
-	SyncError        string        `json:"syncError,omitempty"`
-	LLMConfig        SyncLLMConfig `json:"llmConfig,omitempty"`
-	LegacyTagMessage string        `json:"legacyTagMessage,omitempty"`
+	Config         Config        `json:"config"`
+	Sources        []SkillSource `json:"sources"`
+	Repositories   []Repository  `json:"repositories,omitempty"`
+	Skills         []Skill       `json:"skills"`
+	Summary        Summary       `json:"summary"`
+	SyncConfigured bool          `json:"syncConfigured"`
+	SyncPath       string        `json:"syncPath,omitempty"`
+	SyncError      string        `json:"syncError,omitempty"`
+	LLMConfig      SyncLLMConfig `json:"llmConfig,omitempty"`
 }
 
 type PullSourceResult struct {
@@ -87,15 +98,12 @@ type PullSourceResult struct {
 	Message   string    `json:"message"`
 }
 
-type ApplySyncResult struct {
-	Inventory Inventory `json:"inventory"`
-	Message   string    `json:"message"`
-}
-
-type AdoptSyncResult struct {
-	Inventory Inventory `json:"inventory"`
-	Adopted   int       `json:"adopted"`
-	Skipped   []string  `json:"skipped,omitempty"`
+type BulkEnableResult struct {
+	Inventory      Inventory `json:"inventory"`
+	Enabled        int       `json:"enabled"`
+	AlreadyEnabled int       `json:"alreadyEnabled"`
+	Skipped        int       `json:"skipped"`
+	Failed         []string  `json:"failed,omitempty"`
 }
 
 type CloneRepositoryResult struct {
@@ -125,6 +133,8 @@ type SkillSource struct {
 
 type Repository struct {
 	ID            string   `json:"id"`
+	Provider      string   `json:"provider"`
+	SourceKey     string   `json:"sourceKey"`
 	RepoID        string   `json:"repoId"`
 	Path          string   `json:"path"`
 	Alias         string   `json:"alias,omitempty"`
@@ -133,6 +143,7 @@ type Repository struct {
 	ScanRoots     []string `json:"scanRoots,omitempty"`
 	IgnorePaths   []string `json:"ignorePaths,omitempty"`
 	SkillCount    int      `json:"skillCount"`
+	Installed     bool     `json:"installed"`
 	LastScannedAt string   `json:"lastScannedAt,omitempty"`
 	IsGitRepo     bool     `json:"isGitRepo"`
 	CurrentRef    string   `json:"currentRef,omitempty"`
@@ -146,6 +157,7 @@ type Skill struct {
 	Name                string           `json:"name"`
 	DisplayName         string           `json:"displayName,omitempty"`
 	SourceID            string           `json:"sourceId"`
+	SourceKey           string           `json:"sourceKey,omitempty"`
 	SourceAlias         string           `json:"sourceAlias,omitempty"`
 	SourcePath          string           `json:"sourcePath"`
 	RepoID              string           `json:"repoId,omitempty"`
@@ -162,10 +174,9 @@ type Skill struct {
 	HasSymlink          bool             `json:"hasSymlink"`
 	SymlinkTarget       string           `json:"symlinkTarget,omitempty"`
 	IsActive            bool             `json:"isActive"`
-	IsSynced            bool             `json:"isSynced"`
-	DesiredEnabled      *bool            `json:"desiredEnabled,omitempty"`
-	CanSync             bool             `json:"canSync"`
-	LocalOnly           bool             `json:"localOnly"`
+	IsSynced            bool             `json:"-"`
+	DesiredEnabled      *bool            `json:"-"`
+	CanSync             bool             `json:"-"`
 	Ref                 string           `json:"ref,omitempty"`
 	RefMismatch         bool             `json:"refMismatch"`
 	ValidationErrors    []string         `json:"validationErrors,omitempty"`
@@ -238,6 +249,7 @@ type Summary struct {
 
 func DefaultConfig() Config {
 	return Config{
+		Version:    2,
 		TargetDirs: []string{expandHome("~/.agents/skills")},
 		Validation: ValidationConfig{
 			Mode:          ValidationStrict,

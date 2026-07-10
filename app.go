@@ -21,7 +21,6 @@ import (
 type App struct {
 	ctx       context.Context
 	store     *skillmgr.ConfigStore
-	tagStore  *skillmgr.SkillTagStore
 	service   *skillmgr.Service
 	logPath   string
 	mu        sync.Mutex
@@ -35,15 +34,10 @@ func NewApp() *App {
 	if err != nil {
 		configPath = filepath.Join(".", "config.json")
 	}
-	tagPath, err := skillmgr.DefaultSkillTagPath()
-	if err != nil {
-		tagPath = filepath.Join(".", "tags.json")
-	}
 	app := &App{
-		store:    skillmgr.NewConfigStore(configPath),
-		tagStore: skillmgr.NewSkillTagStore(tagPath),
-		service:  skillmgr.NewService(),
-		logPath:  defaultDebugLogPath(),
+		store:   skillmgr.NewConfigStore(configPath),
+		service: skillmgr.NewService(),
+		logPath: defaultDebugLogPath(),
 	}
 	app.service.SetLogger(app.debugLogf)
 	return app
@@ -99,13 +93,6 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.config = config
 	a.debugLogf("config loaded repositories=%d sources=%d sync_folder=%q watch=%v", len(config.Repositories), len(config.Sources), config.Sync.Folder, config.Scan.WatchSourceFolders)
-	if a.migrateSourcesToRepositoriesLocked(ctx) {
-		a.debugLogf("migrated legacy sources repositories=%d remaining_sources=%d", len(a.config.Repositories), len(a.config.Sources))
-		if err := a.store.Save(a.config); err != nil {
-			a.debugLogf("save migrated config error: %v", err)
-			fmt.Println("save migrated config:", err)
-		}
-	}
 	if err := a.refreshLocked(ctx); err != nil {
 		a.debugLogf("initial scan error: %v", err)
 		fmt.Println("initial scan:", err)
@@ -191,6 +178,9 @@ func (a *App) AddSource(path string) (skillmgr.Inventory, error) {
 	if path == "" {
 		return skillmgr.Inventory{}, errors.New("source path is required")
 	}
+	if a.config.Sync.Folder == "" {
+		return skillmgr.Inventory{}, errors.New("choose a sync folder before adding repositories")
+	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return skillmgr.Inventory{}, err
@@ -214,16 +204,7 @@ func (a *App) AddSource(path string) (skillmgr.Inventory, error) {
 		}
 		return a.inventory, nil
 	}
-	for _, source := range a.config.Sources {
-		if filepath.Clean(source.Path) == filepath.Clean(abs) {
-			return a.inventory, nil
-		}
-	}
-	a.config.Sources = append(a.config.Sources, skillmgr.NewSkillSourceConfig(abs))
-	if err := a.persistAndRefreshLocked(); err != nil {
-		return skillmgr.Inventory{}, err
-	}
-	return a.inventory, nil
+	return skillmgr.Inventory{}, errors.New("cross-device sync currently supports only Git repositories with a usable remote")
 }
 
 func (a *App) AddRepository(path string) (skillmgr.Inventory, error) {
@@ -359,6 +340,9 @@ func (a *App) pullRepositoryConfig(repository skillmgr.RepositoryConfig) (skillm
 func (a *App) SaveConfig(config skillmgr.Config) (skillmgr.Inventory, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if strings.TrimSpace(config.Sync.Folder) == "" {
+		return skillmgr.Inventory{}, errors.New("sync folder is required")
+	}
 	a.config = config
 	if err := a.persistAndRefreshLocked(); err != nil {
 		return skillmgr.Inventory{}, err
@@ -384,87 +368,63 @@ func (a *App) BrowseForSyncFolder() (string, error) {
 	})
 }
 
-func (a *App) ApplySync() (skillmgr.ApplySyncResult, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.config.Sync.Folder == "" {
-		return skillmgr.ApplySyncResult{}, errors.New("sync folder is not configured")
-	}
-	applied, skipped := 0, 0
-	for _, skill := range a.inventory.Skills {
-		if !skill.IsSynced || skill.DesiredEnabled == nil {
-			continue
-		}
-		if skill.Status == skillmgr.StatusMissingSource || skill.Status == skillmgr.StatusMissingPath ||
-			skill.Status == skillmgr.StatusInvalid || skill.Status == skillmgr.StatusError ||
-			skill.Status == skillmgr.StatusConflict {
-			skipped++
-			continue
-		}
-		if *skill.DesiredEnabled {
-			if skill.SourcePath == "" {
-				skipped++
-				continue
-			}
-			if err := a.service.Enable(a.ctx, a.config, skill); err != nil {
-				skipped++
-				continue
-			}
-			applied++
-			continue
-		}
-		if err := a.disableSyncedSkillLocked(skill); err != nil {
-			skipped++
-			continue
-		}
-		applied++
-	}
-	a.config.Sync.LastAppliedAt = time.Now().Format(time.RFC3339)
-	if err := a.persistAndRefreshLocked(); err != nil {
-		return skillmgr.ApplySyncResult{}, err
-	}
-	message := fmt.Sprintf("Applied %d synced changes.", applied)
-	if skipped > 0 {
-		message = fmt.Sprintf("%s Skipped %d items that need attention.", message, skipped)
-	}
-	return skillmgr.ApplySyncResult{Inventory: a.inventory, Message: message}, nil
+func (a *App) BrowseForCloneParent() (string, error) {
+	return wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
+		Title: "Choose Clone Parent Folder",
+	})
 }
 
-func (a *App) AdoptCurrentEnabledSkills() (skillmgr.AdoptSyncResult, error) {
+func (a *App) BrowseForExistingRepository() (string, error) {
+	return wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
+		Title: "Choose Existing Repository",
+	})
+}
+
+func (a *App) UseExistingRepository(expectedRepoID string, path string) (skillmgr.Inventory, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	store := a.currentSyncStoreLocked()
-	if store == nil {
-		return skillmgr.AdoptSyncResult{}, errors.New("sync folder is not configured")
+	if strings.TrimSpace(expectedRepoID) == "" {
+		return skillmgr.Inventory{}, errors.New("expected repository ID is required")
 	}
-	document, err := store.Load()
+	if strings.TrimSpace(path) == "" {
+		return skillmgr.Inventory{}, errors.New("repository path is required")
+	}
+	abs, err := filepath.Abs(path)
 	if err != nil {
-		return skillmgr.AdoptSyncResult{}, err
+		return skillmgr.Inventory{}, err
 	}
-	adopted := 0
-	var skipped []string
-	now := time.Now().UTC().Format(time.RFC3339)
-	for _, skill := range a.inventory.Skills {
-		if !skill.IsActive {
-			continue
+	provider, _ := skillmgr.ProviderFor(skillmgr.GitProvider)
+	installation, remote, err := provider.Inspect(a.ctx, abs)
+	if err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	if installation.SourceID != expectedRepoID {
+		return skillmgr.Inventory{}, fmt.Errorf("selected repository is %s, expected %s", installation.SourceID, expectedRepoID)
+	}
+	repository := skillmgr.RepositoryConfig{
+		ID:        installation.SourceID,
+		RepoID:    installation.SourceID,
+		Path:      installation.Path,
+		Enabled:   true,
+		CloneURL:  remote,
+		ScanRoots: append([]string(nil), installation.Options.ScanRoots...),
+	}
+	replaced := false
+	for index := range a.config.Repositories {
+		if a.config.Repositories[index].RepoID == expectedRepoID {
+			repository.Alias = a.config.Repositories[index].Alias
+			a.config.Repositories[index] = repository
+			replaced = true
+			break
 		}
-		if !skill.CanSync || skill.RepoID == "" || skill.RepoSubpath == "" {
-			skipped = append(skipped, skill.Name)
-			continue
-		}
-		record := syncRecordForSkill(skill, true)
-		record.UpdatedAt = now
-		document.Skills[skill.SyncID] = record
-		adopted++
 	}
-	if err := store.Save(document); err != nil {
-		return skillmgr.AdoptSyncResult{}, err
+	if !replaced {
+		a.config.Repositories = append(a.config.Repositories, repository)
 	}
-	a.config.Sync.LastAppliedAt = time.Now().Format(time.RFC3339)
 	if err := a.persistAndRefreshLocked(); err != nil {
-		return skillmgr.AdoptSyncResult{}, err
+		return skillmgr.Inventory{}, err
 	}
-	return skillmgr.AdoptSyncResult{Inventory: a.inventory, Adopted: adopted, Skipped: skipped}, nil
+	return a.inventory, nil
 }
 
 func (a *App) CloneRepository(repoID string, cloneURL string, parentDir string, folderName string) (skillmgr.CloneRepositoryResult, error) {
@@ -512,30 +472,12 @@ func (a *App) EnableSkill(skillID string) (skillmgr.Inventory, error) {
 	if err != nil {
 		return skillmgr.Inventory{}, err
 	}
-	if a.config.Sync.Folder != "" && skill.CanSync {
-		store := a.currentSyncStoreLocked()
-		if store == nil {
-			return skillmgr.Inventory{}, errors.New("sync folder is not configured")
-		}
-		record := syncRecordForSkill(skill, true)
-		if err := store.UpsertSkill(record); err != nil {
-			return skillmgr.Inventory{}, err
-		}
+	store := a.currentSyncStoreLocked()
+	if store == nil || !skill.IsSynced {
+		return skillmgr.Inventory{}, errors.New("skill is not available in the shared catalog")
 	}
-	if err := a.service.Enable(a.ctx, a.config, skill); err != nil {
-		return skillmgr.Inventory{}, err
-	}
-	if err := a.refreshLocked(a.ctx); err != nil {
-		return skillmgr.Inventory{}, err
-	}
-	return a.inventory, nil
-}
-
-func (a *App) EnableSkillLocalOnly(skillID string) (skillmgr.Inventory, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	skill, err := a.findSkillLocked(skillID)
-	if err != nil {
+	record := syncRecordForSkill(skill, true)
+	if err := store.UpsertSkill(record); err != nil {
 		return skillmgr.Inventory{}, err
 	}
 	if err := a.service.Enable(a.ctx, a.config, skill); err != nil {
@@ -547,27 +489,46 @@ func (a *App) EnableSkillLocalOnly(skillID string) (skillmgr.Inventory, error) {
 	return a.inventory, nil
 }
 
-func (a *App) RemoveSkillFromSync(skillID string) (skillmgr.Inventory, error) {
+func (a *App) EnableSkills(skillIDs []string) (skillmgr.BulkEnableResult, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	skill, err := a.findSkillLocked(skillID)
-	if err != nil {
-		return skillmgr.Inventory{}, err
-	}
-	if skill.SyncID == "" {
-		return a.inventory, nil
-	}
 	store := a.currentSyncStoreLocked()
 	if store == nil {
-		return skillmgr.Inventory{}, errors.New("sync folder is not configured")
+		return skillmgr.BulkEnableResult{}, errors.New("sync folder is not configured")
 	}
-	if err := store.DeleteSkill(skill.SyncID); err != nil {
-		return skillmgr.Inventory{}, err
+	result := skillmgr.BulkEnableResult{}
+	for _, skillID := range skillIDs {
+		skill, err := a.findSkillLocked(skillID)
+		if err != nil {
+			result.Skipped++
+			result.Failed = append(result.Failed, skillID+": "+err.Error())
+			continue
+		}
+		if skill.IsActive {
+			result.AlreadyEnabled++
+			continue
+		}
+		if !bulkEnableEligible(skill) {
+			result.Skipped++
+			continue
+		}
+		if err := store.UpsertSkill(syncRecordForSkill(skill, true)); err != nil {
+			result.Skipped++
+			result.Failed = append(result.Failed, skill.Name+": "+err.Error())
+			continue
+		}
+		if err := a.service.Enable(a.ctx, a.config, skill); err != nil {
+			result.Skipped++
+			result.Failed = append(result.Failed, skill.Name+": "+err.Error())
+			continue
+		}
+		result.Enabled++
 	}
 	if err := a.refreshLocked(a.ctx); err != nil {
-		return skillmgr.Inventory{}, err
+		return skillmgr.BulkEnableResult{}, err
 	}
-	return a.inventory, nil
+	result.Inventory = a.inventory
+	return result, nil
 }
 
 func (a *App) SaveLLMConfig(config skillmgr.SyncLLMConfig) (skillmgr.Inventory, error) {
@@ -670,15 +631,12 @@ func (a *App) DisableSkill(skillID string) (skillmgr.Inventory, error) {
 	if err != nil {
 		return skillmgr.Inventory{}, err
 	}
-	if a.config.Sync.Folder != "" && skill.IsSynced {
-		store := a.currentSyncStoreLocked()
-		if store == nil {
-			return skillmgr.Inventory{}, errors.New("sync folder is not configured")
-		}
-		record := syncRecordForSkill(skill, false)
-		if err := store.UpsertSkill(record); err != nil {
-			return skillmgr.Inventory{}, err
-		}
+	store := a.currentSyncStoreLocked()
+	if store == nil || !skill.IsSynced {
+		return skillmgr.Inventory{}, errors.New("skill is not available in the shared catalog")
+	}
+	if err := store.UpsertSkill(syncRecordForSkill(skill, false)); err != nil {
+		return skillmgr.Inventory{}, err
 	}
 	if err := a.service.Disable(a.ctx, a.config, skill); err != nil {
 		return skillmgr.Inventory{}, err
@@ -694,6 +652,13 @@ func (a *App) ResolveConflict(skillID string) (skillmgr.Inventory, error) {
 	defer a.mu.Unlock()
 	skill, err := a.findSkillLocked(skillID)
 	if err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	store := a.currentSyncStoreLocked()
+	if store == nil || !skill.IsSynced {
+		return skillmgr.Inventory{}, errors.New("skill is not available in the shared catalog")
+	}
+	if err := store.UpsertSkill(syncRecordForSkill(skill, true)); err != nil {
 		return skillmgr.Inventory{}, err
 	}
 	if err := a.service.ResolveConflict(a.ctx, a.config, skill); err != nil {
@@ -738,29 +703,34 @@ func (a *App) SaveSkillTags(skillID string, tags []string) (skillmgr.Inventory, 
 	if err != nil {
 		return skillmgr.Inventory{}, err
 	}
-	if a.config.Sync.Folder != "" {
-		if !skill.IsSynced {
-			return skillmgr.Inventory{}, errors.New("tags can only be synced after the skill has been added to sync")
-		}
-		store := a.currentSyncStoreLocked()
-		if store == nil {
-			return skillmgr.Inventory{}, errors.New("sync folder is not configured")
-		}
-		record := syncRecordForSkill(skill, skill.DesiredEnabled != nil && *skill.DesiredEnabled)
-		record.Tags = tags
-		if err := store.UpsertSkill(record); err != nil {
-			return skillmgr.Inventory{}, err
-		}
-		if err := a.refreshLocked(a.ctx); err != nil {
-			return skillmgr.Inventory{}, err
-		}
-		return a.inventory, nil
+	if !skill.IsSynced {
+		return skillmgr.Inventory{}, errors.New("skill is not available in the shared catalog")
 	}
-	if err := a.tagStore.SetSkillTags(skill.Name, tags); err != nil {
+	store := a.currentSyncStoreLocked()
+	if store == nil {
+		return skillmgr.Inventory{}, errors.New("sync folder is not configured")
+	}
+	record := syncRecordForSkill(skill, skill.DesiredEnabled != nil && *skill.DesiredEnabled)
+	record.Tags = tags
+	if err := store.UpsertSkill(record); err != nil {
 		return skillmgr.Inventory{}, err
 	}
-	a.applyLegacySkillTagsLocked()
+	if err := a.refreshLocked(a.ctx); err != nil {
+		return skillmgr.Inventory{}, err
+	}
 	return a.inventory, nil
+}
+
+func bulkEnableEligible(skill skillmgr.Skill) bool {
+	if !skill.IsSynced || skill.SourcePath == "" {
+		return false
+	}
+	switch skill.Status {
+	case skillmgr.StatusConflict, skillmgr.StatusInvalid, skillmgr.StatusMissingSource, skillmgr.StatusMissingPath, skillmgr.StatusError:
+		return false
+	default:
+		return true
+	}
 }
 
 func (a *App) OpenPath(path string) error {
@@ -795,53 +765,107 @@ func (a *App) OpenInVSCode(path string) error {
 func (a *App) refreshLocked(ctx context.Context) error {
 	startedAt := time.Now()
 	a.debugLogf("refresh begin repositories=%d sources=%d", len(a.config.Repositories), len(a.config.Sources))
-	var syncDocument skillmgr.SyncDocument
 	syncStore := a.currentSyncStoreLocked()
-	var syncErr error
-	if syncStore != nil {
-		a.debugLogf("sync load begin path=%q", syncStore.Path())
-		syncDocument, syncErr = syncStore.Load()
-		if syncErr != nil {
-			a.debugLogf("sync load error path=%q error=%v", syncStore.Path(), syncErr)
-			syncDocument = skillmgr.SyncDocument{}
-		} else {
-			a.debugLogf("sync load done path=%q records=%d", syncStore.Path(), len(syncDocument.Skills))
+	if syncStore == nil {
+		inventory, err := a.service.Scan(ctx, a.config)
+		if err != nil {
+			return err
+		}
+		a.config = inventory.Config
+		a.inventory = inventory
+		a.inventory.SyncConfigured = false
+		return nil
+	}
+	a.debugLogf("sync load begin path=%q", syncStore.Path())
+	syncDocument, syncErr := syncStore.Load()
+	if syncErr != nil {
+		a.debugLogf("sync load error path=%q error=%v", syncStore.Path(), syncErr)
+		inventory, scanErr := a.service.Scan(ctx, a.config)
+		if scanErr != nil {
+			return scanErr
+		}
+		a.config = inventory.Config
+		a.inventory = inventory
+		a.inventory.SyncConfigured = true
+		a.inventory.SyncPath = syncStore.Path()
+		a.inventory.SyncError = syncErr.Error()
+		return nil
+	}
+	if _, err := os.Stat(syncStore.Path()); errors.Is(err, os.ErrNotExist) {
+		if err := syncStore.Save(syncDocument); err != nil {
+			return err
 		}
 	}
+	a.debugLogf("sync load done path=%q records=%d", syncStore.Path(), len(syncDocument.Skills))
 	inventory, err := a.service.ScanWithSync(ctx, a.config, syncDocument)
 	if err != nil {
 		a.debugLogf("refresh scan error: %v duration=%s", err, time.Since(startedAt))
 		return err
 	}
-	a.config = inventory.Config
-	a.inventory = inventory
-	if syncStore != nil {
-		a.inventory.SyncPath = syncStore.Path()
-	}
-	a.inventory.LLMConfig = syncDocument.LLM
-	if syncErr != nil {
-		a.inventory.SyncError = syncErr.Error()
-	}
-	a.applyLegacySkillTagsLocked()
-	if syncStore != nil {
-		a.migrateLegacyTagsToSyncLocked(syncStore)
-	}
-	a.debugLogf("refresh done skills=%d repositories=%d sources=%d duration=%s", len(a.inventory.Skills), len(a.inventory.Repositories), len(a.inventory.Sources), time.Since(startedAt))
-	return nil
-}
-
-func (a *App) applyLegacySkillTagsLocked() {
-	document, err := a.tagStore.Load()
-	if err != nil {
-		fmt.Println("load skill tags:", err)
-		return
-	}
-	for index := range a.inventory.Skills {
-		if len(a.inventory.Skills[index].Tags) > 0 {
+	seeded := false
+	for _, skill := range inventory.Skills {
+		if !skill.CanSync || skill.SyncID == "" {
 			continue
 		}
-		a.inventory.Skills[index].Tags = append([]string(nil), document.Skills[a.inventory.Skills[index].Name]...)
+		if _, exists := syncDocument.Skills[skill.SyncID]; exists {
+			continue
+		}
+		record := syncRecordForSkill(skill, skill.IsActive)
+		record.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		syncDocument.Skills[skill.SyncID] = record
+		seeded = true
 	}
+	if seeded {
+		if err := syncStore.Save(syncDocument); err != nil {
+			return err
+		}
+		inventory, err = a.service.ScanWithSync(ctx, a.config, syncDocument)
+		if err != nil {
+			return err
+		}
+	}
+	reconcileErrors := map[string]string{}
+	reconciled := false
+	for _, skill := range inventory.Skills {
+		if !skill.IsSynced || skill.DesiredEnabled == nil {
+			continue
+		}
+		if skill.Status == skillmgr.StatusConflict || skill.Status == skillmgr.StatusInvalid ||
+			skill.Status == skillmgr.StatusMissingSource || skill.Status == skillmgr.StatusMissingPath || skill.Status == skillmgr.StatusError {
+			continue
+		}
+		if *skill.DesiredEnabled && !skill.IsActive {
+			if err := a.service.Enable(ctx, a.config, skill); err != nil {
+				reconcileErrors[skill.ID] = err.Error()
+			} else {
+				reconciled = true
+			}
+		} else if !*skill.DesiredEnabled && skill.IsActive {
+			if err := a.disableSyncedSkillLocked(skill); err != nil {
+				reconcileErrors[skill.ID] = err.Error()
+			} else {
+				reconciled = true
+			}
+		}
+	}
+	if reconciled || len(reconcileErrors) > 0 {
+		inventory, err = a.service.ScanWithSync(ctx, a.config, syncDocument)
+		if err != nil {
+			return err
+		}
+		for index := range inventory.Skills {
+			if message := reconcileErrors[inventory.Skills[index].ID]; message != "" {
+				inventory.Skills[index].Status = skillmgr.StatusError
+				inventory.Skills[index].Error = message
+			}
+		}
+	}
+	a.config = inventory.Config
+	a.inventory = inventory
+	a.inventory.SyncPath = syncStore.Path()
+	a.inventory.LLMConfig = syncDocument.LLM
+	a.debugLogf("refresh done skills=%d repositories=%d sources=%d duration=%s", len(a.inventory.Skills), len(a.inventory.Repositories), len(a.inventory.Sources), time.Since(startedAt))
+	return nil
 }
 
 func (a *App) persistAndRefreshLocked() error {
@@ -901,54 +925,19 @@ func (a *App) repositoryConfigFromPathLocked(ctx context.Context, path string) (
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	gitRoot, ok := skillmgr.GitRepositoryRootForApp(ctx, path)
-	if !ok {
-		return skillmgr.RepositoryConfig{}, false
-	}
-	remote, ok := skillmgr.GitRemoteURLForApp(ctx, gitRoot)
-	if !ok {
-		return skillmgr.RepositoryConfig{}, false
-	}
-	repoID, ok := skillmgr.CanonicalGitRemoteForApp(remote)
-	if !ok {
+	provider, _ := skillmgr.ProviderFor(skillmgr.GitProvider)
+	installation, remote, err := provider.Inspect(ctx, path)
+	if err != nil {
 		return skillmgr.RepositoryConfig{}, false
 	}
 	return skillmgr.RepositoryConfig{
-		ID:        repoID,
-		RepoID:    repoID,
-		Path:      gitRoot,
-		Enabled:   true,
+		ID:        installation.SourceID,
+		RepoID:    installation.SourceID,
+		Path:      installation.Path,
+		Enabled:   installation.Enabled,
 		CloneURL:  remote,
-		ScanRoots: []string{"."},
+		ScanRoots: append([]string(nil), installation.Options.ScanRoots...),
 	}, true
-}
-
-func (a *App) migrateSourcesToRepositoriesLocked(ctx context.Context) bool {
-	if len(a.config.Sources) == 0 {
-		return false
-	}
-	existing := map[string]bool{}
-	for _, repository := range a.config.Repositories {
-		existing[repository.RepoID] = true
-	}
-	changed := false
-	remaining := a.config.Sources[:0]
-	for _, source := range a.config.Sources {
-		repository, ok := a.repositoryConfigFromPathLocked(ctx, source.Path)
-		if !ok {
-			remaining = append(remaining, source)
-			continue
-		}
-		if !existing[repository.RepoID] {
-			repository.Alias = source.Alias
-			repository.Enabled = source.Enabled
-			a.config.Repositories = append(a.config.Repositories, repository)
-			existing[repository.RepoID] = true
-		}
-		changed = true
-	}
-	a.config.Sources = remaining
-	return changed
 }
 
 func syncRecordForSkill(skill skillmgr.Skill, enabled bool) skillmgr.SyncSkillRecord {
@@ -963,10 +952,13 @@ func syncRecordForSkill(skill skillmgr.Skill, enabled bool) skillmgr.SyncSkillRe
 		Tags:                append([]string(nil), skill.Tags...),
 		Profile:             cloneSkillProfileForApp(skill.Profile),
 		Source: skillmgr.SyncSource{
-			RepoID:      skill.RepoID,
-			CloneURL:    skill.CloneURL,
-			RepoSubpath: skill.RepoSubpath,
-			Ref:         skill.Ref,
+			Provider: skillmgr.GitProvider,
+			ID:       skill.RepoID,
+			Locator: skillmgr.SourceLocator{
+				CloneURL: skill.CloneURL,
+				Subpath:  skill.RepoSubpath,
+				Ref:      skill.Ref,
+			},
 		},
 	}
 }
@@ -988,47 +980,6 @@ func (a *App) disableSyncedSkillLocked(skill skillmgr.Skill) error {
 		_, _, _ = skillmgr.DisableInTargetForApp(a.config.TargetDirs, previous)
 	}
 	return a.service.Disable(a.ctx, a.config, skill)
-}
-
-func (a *App) migrateLegacyTagsToSyncLocked(store *skillmgr.SyncStore) {
-	legacy, err := a.tagStore.Load()
-	if err != nil || len(legacy.Skills) == 0 {
-		return
-	}
-	document, err := store.Load()
-	if err != nil || len(document.Skills) == 0 {
-		return
-	}
-	changed := false
-	for id, record := range document.Skills {
-		if len(record.Tags) > 0 {
-			continue
-		}
-		tags := legacy.Skills[record.TargetName]
-		if len(tags) == 0 {
-			continue
-		}
-		record.Tags = tags
-		document.Skills[id] = record
-		changed = true
-	}
-	if !changed {
-		return
-	}
-	if err := store.Save(document); err != nil {
-		fmt.Println("migrate legacy tags:", err)
-		return
-	}
-	if err := a.tagStore.Remove(); err != nil {
-		fmt.Println("remove legacy tags:", err)
-		return
-	}
-	a.inventory.LegacyTagMessage = "Legacy tags were migrated into the sync file."
-	for index := range a.inventory.Skills {
-		if record, ok := document.Skills[a.inventory.Skills[index].SyncID]; ok {
-			a.inventory.Skills[index].Tags = append([]string(nil), record.Tags...)
-		}
-	}
 }
 
 func (a *App) restartWatcherLocked() error {
@@ -1057,6 +1008,17 @@ func (a *App) restartWatcherLocked() error {
 			} else {
 				a.debugLogf("watcher add repository repo_id=%q path=%q", repository.RepoID, repository.Path)
 			}
+		}
+	}
+	if a.config.Sync.Folder != "" {
+		if err := os.MkdirAll(a.config.Sync.Folder, 0o755); err != nil {
+			_ = watcher.Close()
+			return err
+		}
+		if err := watcher.Add(a.config.Sync.Folder); err != nil {
+			a.debugLogf("watcher add sync folder error path=%q error=%v", a.config.Sync.Folder, err)
+		} else {
+			a.debugLogf("watcher add sync folder path=%q", a.config.Sync.Folder)
 		}
 	}
 	a.watcher = watcher

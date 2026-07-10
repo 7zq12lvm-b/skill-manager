@@ -42,10 +42,15 @@ type SyncSkillRecord struct {
 }
 
 type SyncSource struct {
-	RepoID      string `json:"repoId"`
-	CloneURL    string `json:"cloneUrl,omitempty"`
-	RepoSubpath string `json:"repoSubpath"`
-	Ref         string `json:"ref,omitempty"`
+	Provider string        `json:"provider"`
+	ID       string        `json:"id"`
+	Locator  SourceLocator `json:"locator"`
+}
+
+type SourceLocator struct {
+	CloneURL string `json:"cloneUrl,omitempty"`
+	Subpath  string `json:"subpath"`
+	Ref      string `json:"ref,omitempty"`
 }
 
 func NewSyncStore(path string) *SyncStore {
@@ -66,7 +71,7 @@ func (s *SyncStore) Path() string {
 
 func (s *SyncStore) Load() (SyncDocument, error) {
 	document := SyncDocument{
-		Version: 1,
+		Version: 2,
 		Skills:  map[string]SyncSkillRecord{},
 	}
 	if s == nil || s.path == "" {
@@ -81,6 +86,9 @@ func (s *SyncStore) Load() (SyncDocument, error) {
 	}
 	if err := json.Unmarshal(data, &document); err != nil {
 		return document, err
+	}
+	if document.Version != 2 {
+		return document, errors.New("unsupported sync document version; expected version 2")
 	}
 	return normalizeSyncDocument(document), nil
 }
@@ -97,7 +105,28 @@ func (s *SyncStore) Save(document SyncDocument) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0o644)
+	temp, err := os.CreateTemp(filepath.Dir(s.path), ".skill-manager-sync-*.tmp")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err := temp.Chmod(0o644); err != nil {
+		temp.Close()
+		return err
+	}
+	if _, err := temp.Write(data); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, s.path)
 }
 
 func (s *SyncStore) UpsertSkill(record SyncSkillRecord) error {
@@ -106,7 +135,7 @@ func (s *SyncStore) UpsertSkill(record SyncSkillRecord) error {
 		return err
 	}
 	record = normalizeSyncSkillRecord(record)
-	id := syncSkillID(record.Source.RepoID, record.Source.RepoSubpath)
+	id := syncRecordID(record)
 	if id == "" {
 		return errors.New("sync skill source is incomplete")
 	}
@@ -158,7 +187,7 @@ func (s *SyncStore) UpsertSkillProfile(syncID string, profile SkillProfile) erro
 }
 
 func normalizeSyncDocument(document SyncDocument) SyncDocument {
-	document.Version = 1
+	document.Version = 2
 	if document.Skills == nil {
 		document.Skills = map[string]SyncSkillRecord{}
 	}
@@ -176,7 +205,7 @@ func normalizeSyncDocument(document SyncDocument) SyncDocument {
 	}
 	for id, record := range document.Skills {
 		record = normalizeSyncSkillRecord(record)
-		cleanID := syncSkillID(record.Source.RepoID, record.Source.RepoSubpath)
+		cleanID := syncRecordID(record)
 		if cleanID == "" {
 			delete(document.Skills, id)
 			continue
@@ -190,18 +219,26 @@ func normalizeSyncDocument(document SyncDocument) SyncDocument {
 }
 
 func normalizeSyncSkillRecord(record SyncSkillRecord) SyncSkillRecord {
-	record.Source.RepoID = strings.Trim(strings.TrimSpace(record.Source.RepoID), "/")
-	record.Source.RepoSubpath = cleanRepoSubpath(record.Source.RepoSubpath)
-	record.Source.CloneURL = strings.TrimSpace(record.Source.CloneURL)
-	record.Source.Ref = strings.TrimSpace(record.Source.Ref)
+	record.Source.Provider = strings.TrimSpace(record.Source.Provider)
+	record.Source.ID = strings.Trim(strings.TrimSpace(record.Source.ID), "/")
+	record.Source.Locator.Subpath = cleanRepoSubpath(record.Source.Locator.Subpath)
+	record.Source.Locator.CloneURL = strings.TrimSpace(record.Source.Locator.CloneURL)
+	record.Source.Locator.Ref = strings.TrimSpace(record.Source.Locator.Ref)
 	record.TargetName = strings.TrimSpace(record.TargetName)
 	if record.TargetName == "" {
-		record.TargetName = filepath.Base(record.Source.RepoSubpath)
+		record.TargetName = filepath.Base(record.Source.Locator.Subpath)
 	}
 	record.PreviousTargetNames = cleanNameList(record.PreviousTargetNames)
 	record.Tags = cleanSkillTags(record.Tags)
 	record.Profile = normalizeSkillProfile(record.Profile)
 	return record
+}
+
+func syncRecordID(record SyncSkillRecord) string {
+	if record.Source.Provider != "git" {
+		return ""
+	}
+	return syncSkillID(record.Source.ID, record.Source.Locator.Subpath)
 }
 
 func normalizeSyncLLMConfig(config SyncLLMConfig) SyncLLMConfig {
@@ -255,6 +292,21 @@ func cleanNameList(values []string) []string {
 		}
 		seen[value] = true
 		cleaned = append(cleaned, value)
+	}
+	sort.Strings(cleaned)
+	return cleaned
+}
+
+func cleanSkillTags(tags []string) []string {
+	seen := map[string]bool{}
+	cleaned := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" || seen[tag] {
+			continue
+		}
+		seen[tag] = true
+		cleaned = append(cleaned, tag)
 	}
 	sort.Strings(cleaned)
 	return cleaned

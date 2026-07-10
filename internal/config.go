@@ -36,6 +36,9 @@ func (s *ConfigStore) Load() (Config, error) {
 	if err := json.Unmarshal(data, &config); err != nil {
 		return config, err
 	}
+	if config.Version != 2 {
+		return config, errors.New("unsupported local config version; expected version 2")
+	}
 	return normalizeConfig(config), nil
 }
 
@@ -44,7 +47,7 @@ func (s *ConfigStore) Save(config Config) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(config, "", "  ")
+	data, err := json.MarshalIndent(configForStorage(config), "", "  ")
 	if err != nil {
 		return err
 	}
@@ -52,6 +55,7 @@ func (s *ConfigStore) Save(config Config) error {
 }
 
 func normalizeConfig(config Config) Config {
+	config.Version = 2
 	if len(config.TargetDirs) == 0 {
 		config.TargetDirs = append([]string(nil), DefaultConfig().TargetDirs...)
 	}
@@ -62,13 +66,29 @@ func normalizeConfig(config Config) Config {
 	if config.ConflictHandling == "" {
 		config.ConflictHandling = "ask"
 	}
-	for i := range config.Sources {
-		config.Sources[i].Path = expandHome(config.Sources[i].Path)
-		if config.Sources[i].ID == "" {
-			config.Sources[i].ID = sourceID(config.Sources[i].Path)
+	config.Sync.Folder = expandHome(strings.TrimSpace(config.Sync.Folder))
+	if config.Repositories == nil {
+		for i := range config.Installations {
+			installation := &config.Installations[i]
+			installation.Provider = strings.TrimSpace(installation.Provider)
+			installation.SourceID = strings.Trim(strings.TrimSpace(installation.SourceID), "/")
+			installation.Path = filepath.Clean(expandHome(installation.Path))
+			installation.Options.ScanRoots = cleanRelativePaths(installation.Options.ScanRoots, []string{"."})
+			installation.Options.IgnorePaths = cleanRelativePaths(installation.Options.IgnorePaths, nil)
+			if installation.Provider != "git" {
+				continue
+			}
+			config.Repositories = append(config.Repositories, RepositoryConfig{
+				ID:          installation.SourceID,
+				RepoID:      installation.SourceID,
+				Path:        installation.Path,
+				Alias:       installation.Alias,
+				Enabled:     installation.Enabled,
+				ScanRoots:   append([]string(nil), installation.Options.ScanRoots...),
+				IgnorePaths: append([]string(nil), installation.Options.IgnorePaths...),
+			})
 		}
 	}
-	config.Sync.Folder = expandHome(strings.TrimSpace(config.Sync.Folder))
 	for i := range config.Repositories {
 		config.Repositories[i].Path = filepath.Clean(expandHome(config.Repositories[i].Path))
 		config.Repositories[i].RepoID = strings.Trim(strings.TrimSpace(config.Repositories[i].RepoID), "/")
@@ -84,6 +104,28 @@ func normalizeConfig(config Config) Config {
 		config.Repositories[i].ScanRoots = cleanRelativePaths(config.Repositories[i].ScanRoots, []string{"."})
 		config.Repositories[i].IgnorePaths = cleanRelativePaths(config.Repositories[i].IgnorePaths, nil)
 	}
+	return config
+}
+
+func configForStorage(config Config) Config {
+	config = normalizeConfig(config)
+	installations := make([]SourceInstallation, 0, len(config.Repositories))
+	for _, repository := range config.Repositories {
+		installations = append(installations, SourceInstallation{
+			Provider: "git",
+			SourceID: repository.RepoID,
+			Path:     repository.Path,
+			Alias:    repository.Alias,
+			Enabled:  repository.Enabled,
+			Options: SourceInstallationOptions{
+				ScanRoots:   append([]string(nil), repository.ScanRoots...),
+				IgnorePaths: append([]string(nil), repository.IgnorePaths...),
+			},
+		})
+	}
+	config.Installations = installations
+	config.Sources = nil
+	config.Repositories = nil
 	return config
 }
 

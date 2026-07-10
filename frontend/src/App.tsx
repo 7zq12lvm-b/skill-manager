@@ -28,31 +28,23 @@ import logoUniversal from "./assets/images/logo-universal.png";
 import "./App.css";
 
 const statusLabels: Record<string, string> = {
-  synced: "Synced",
+  enabled: "Enabled",
   disabled: "Disabled",
   conflict: "Conflict",
   invalid: "Invalid",
-  missing: "Missing",
   "missing-source": "Missing Source",
   "missing-path": "Missing Path",
-  "needs-apply": "Needs Apply",
-  "local-only": "Local Only",
-  syncing: "Syncing",
   error: "Error",
 };
 
 const statusClass: Record<string, string> = {
-  synced: "status-pill--synced",
+  enabled: "status-pill--enabled",
   disabled: "status-pill--disabled",
   conflict: "status-pill--conflict",
   invalid: "status-pill--invalid",
   error: "status-pill--invalid",
-  missing: "status-pill--missing",
   "missing-source": "status-pill--missing",
   "missing-path": "status-pill--missing",
-  "needs-apply": "status-pill--syncing",
-  "local-only": "status-pill--local-only",
-  syncing: "status-pill--syncing",
 };
 
 const SOURCE_WIDTH_KEY = "skill-manager:source-panel-width";
@@ -68,7 +60,8 @@ const SKILLS_COLUMNS_KEY = "skill-manager:skills-column-widths";
 const skillColumnKeys = ["enabled", "skill", "source", "status"] as const;
 type SkillColumnKey = (typeof skillColumnKeys)[number];
 type SkillColumnWidths = Record<SkillColumnKey, number>;
-type RepositoryPanelItem = skillmgr.Repository | skillmgr.SkillSource;
+type RepositoryPanelItem = skillmgr.Repository;
+type CloneDraft = { source: skillmgr.Repository; parentDir: string };
 const DEFAULT_SKILL_COLUMN_WIDTHS: SkillColumnWidths = {
   enabled: 14,
   skill: 44,
@@ -115,12 +108,10 @@ function App() {
     renameSource,
     pullRepository,
     enableSkill,
-    enableSkillLocalOnly,
+    enableSkills,
     disableSkill,
-    removeSkillFromSync,
-    applySync,
-    adoptCurrentEnabledSkills,
     cloneRepository,
+    useExistingRepository,
     resolveConflict,
     saveConfig,
     saveLLMConfig,
@@ -141,7 +132,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sourceToEdit, setSourceToEdit] = useState<RepositoryPanelItem>();
   const [sourceToRemove, setSourceToRemove] = useState<RepositoryPanelItem>();
-  const [skillToClone, setSkillToClone] = useState<skillmgr.Skill>();
+  const [cloneDraft, setCloneDraft] = useState<CloneDraft>();
   const [sourcePath, setSourcePath] = useState("");
   const [sourcePanelWidth, setSourcePanelWidth] = useState(() =>
     readStoredWidth(SOURCE_WIDTH_KEY, DEFAULT_SOURCE_WIDTH, MIN_SOURCE_WIDTH, MAX_SOURCE_WIDTH),
@@ -200,7 +191,8 @@ function App() {
     const skills = inventory?.skills ?? [];
     const normalizedQuery = query.trim().toLowerCase();
     return skills.filter((skill) => {
-      const matchesSource = selectedSourceId === "all" || skill.sourceId === selectedSourceId || skill.repoId === selectedSourceId;
+      const matchesSource =
+        selectedSourceId === "all" || skill.sourceKey === selectedSourceId || skill.sourceId === selectedSourceId || skill.repoId === selectedSourceId;
       const matchesStatus = statusFilter === "all" || skill.status === statusFilter;
       const matchesTags = selectedTagSet.size === 0 || (skill.tags ?? []).some((tag) => selectedTagSet.has(tag));
       const matchesQuery =
@@ -218,6 +210,9 @@ function App() {
     filteredSkills.find((skill) => skill.id === selectedSkillId) ??
     inventory?.skills?.find((skill) => skill.id === selectedSkillId) ??
     filteredSkills[0];
+  const bulkEnableSkillIds = filteredSkills
+    .filter((skill) => !isActiveSkill(skill) && skill.status === "disabled")
+    .map((skill) => skill.id);
   const workbenchGridColumns = buildWorkbenchGridColumns(sourcePanelWidth, detailPanelWidth);
 
   function maybeGenerateProfileForSkill(skill: skillmgr.Skill) {
@@ -226,7 +221,6 @@ function App() {
       !llmConfigReady(inventory.llmConfig) ||
       !skill.syncId ||
       !skill.sourcePath ||
-      !skill.canSync ||
       profileComplete(skill.profile)
     ) {
       return;
@@ -360,6 +354,30 @@ function App() {
     setSkillColumnWidths((widths) => adjustSkillColumnWidths(widths, leftKey, rightKey, delta));
   }
 
+  async function prepareMissingRepositoryClone(source: skillmgr.Repository) {
+    const parentDir = await browseForRepositoryFolder();
+    if (!parentDir) return;
+    setCloneDraft({ source, parentDir });
+  }
+
+  if (inventory && !inventory.syncConfigured) {
+    return (
+      <SyncSetupScreen
+        error={error}
+        loading={loading}
+        loadingLabel={loadingLabel}
+        onClearError={clearError}
+        onChooseFolder={async () => {
+          const folder = await browseForSyncFolder();
+          if (!folder) return;
+          const config = skillmgr.Config.createFrom(inventory.config);
+          config.sync = skillmgr.SyncConfig.createFrom({ folder });
+          await saveConfig(config);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="app-shell flex h-screen min-w-0 flex-col overflow-hidden bg-background">
       <header className="app-topbar flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
@@ -386,48 +404,11 @@ function App() {
           {inventory && <SummaryBar summary={inventory.summary} />}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {inventory?.syncConfigured ? (
-            <>
-              <Button
-                variant="outline"
-                onClick={adoptCurrentEnabledSkills}
-                disabled={loading}
-                title="Save the skills currently enabled on this machine into the sync file."
-              >
-                <Check aria-hidden="true" className="h-4 w-4" />
-                Adopt
-              </Button>
-              <Button
-                variant="outline"
-                onClick={applySync}
-                disabled={loading}
-                title="Apply the sync file's desired enable and disable state to this machine."
-              >
-                <CloudDownload aria-hidden="true" className={cn("h-4 w-4", loading && "animate-pulse")} />
-                Apply Sync
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="outline"
-              onClick={() => setSettingsOpen(true)}
-              title="Open settings to choose a sync folder before syncing skills across machines."
-            >
-              <CloudDownload aria-hidden="true" className="h-4 w-4" />
-              Set Up Sync
-            </Button>
-          )}
-          <IconButton
-            title="Open the folder where enabled skills are linked."
-            onClick={() => inventory && openPath(primaryTargetDir(inventory.config))}
-          >
-            <Folder aria-hidden="true" className="h-4 w-4" />
-          </IconButton>
           <Button
             variant="outline"
             onClick={rescan}
             disabled={loading}
-            title="Scan every repository and local folder again, then refresh skills and status."
+            title="Scan every repository again and reconcile the shared catalog with this machine."
           >
             <RefreshCcw aria-hidden="true" className={cn("h-4 w-4", loading && "animate-spin")} />
             Rescan All
@@ -462,7 +443,7 @@ function App() {
       >
         <aside className="workbench-panel workbench-panel--sources flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
           <PanelHeader title="Repositories">
-            <IconButton title="Choose a repository or local folder to scan for skills." onClick={() => setAddSourceOpen(true)}>
+            <IconButton title="Choose a Git repository with a remote and add all of its skills to the shared catalog." onClick={() => setAddSourceOpen(true)}>
               <FolderPlus aria-hidden="true" className="h-4 w-4" />
             </IconButton>
           </PanelHeader>
@@ -488,12 +469,11 @@ function App() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium">{repositoryItemTitle(source)}</div>
-                    <div className="truncate text-xs text-muted-foreground">{source.path}</div>
-                    {"currentRef" in source && source.currentRef && (
-                      <div className="truncate text-xs text-muted-foreground">{source.currentRef}</div>
-                    )}
+                    <div className="truncate text-xs text-muted-foreground">{source.installed ? source.path : source.repoId}</div>
+                    {source.currentRef && <div className="truncate text-xs text-muted-foreground">{source.currentRef}</div>}
+                    {!source.installed && <div className="truncate text-xs font-medium text-amber-700">Missing locally</div>}
                   </div>
-                  {source.errorCount > 0 || ("dirty" in source && source.dirty) ? (
+                  {!source.installed || source.errorCount > 0 || source.dirty ? (
                     <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-600" />
                   ) : (
                     <Circle aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-600" />
@@ -501,89 +481,62 @@ function App() {
                 </div>
                 <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
                   <span>{source.skillCount} skills</span>
-                  <span>{formatDate(source.lastScannedAt)}</span>
+                  <span>{source.installed ? formatDate(source.lastScannedAt) : "Shared"}</span>
                 </div>
                 <div className="mt-3 flex gap-1">
-                  <SmallAction title="Open this repository folder in Finder." onClick={(event) => action(event, () => openPath(source.path))}>
-                    <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
-                  </SmallAction>
-                  <SmallAction title="Rename how this repository appears in Skill Manager." onClick={(event) => action(event, () => setSourceToEdit(source))}>
-                    <SlidersHorizontal aria-hidden="true" className="h-3.5 w-3.5" />
-                  </SmallAction>
+                  {source.installed && (
+                    <SmallAction title="Open this repository folder in Finder." onClick={(event) => action(event, () => openPath(source.path))}>
+                      <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+                    </SmallAction>
+                  )}
+                  {source.installed && (
+                    <SmallAction title="Rename how this repository appears in Skill Manager." onClick={(event) => action(event, () => setSourceToEdit(source))}>
+                      <SlidersHorizontal aria-hidden="true" className="h-3.5 w-3.5" />
+                    </SmallAction>
+                  )}
+                  {!source.installed && (
+                    <SmallAction
+                      title="Choose an existing local checkout and verify that its Git remote matches this missing repository."
+                      onClick={(event) => action(event, () => void useExistingRepository(source.repoId))}
+                    >
+                      <FolderOpen aria-hidden="true" className="h-3.5 w-3.5" />
+                    </SmallAction>
+                  )}
                   <SmallAction
                     title={
-                      ("dirty" in source && source.dirty)
+                      !source.installed
+                        ? source.cloneUrl
+                          ? "Choose a parent folder, name the destination, then shallow-clone this repository and restore its shared skills."
+                          : "Clone is unavailable because the shared source does not contain a clone URL."
+                        : source.dirty
                         ? "Pull is disabled until local repository changes are committed or stashed."
-                        : "Run git pull for this repository and refresh its scanned skills."
+                        : "Fetch and fast-forward this repository without merging; shallow checkouts remain shallow."
                     }
-                    disabled={loading || ("dirty" in source && source.dirty)}
-                    onClick={(event) => action(event, () => pullRepository(repositoryItemId(source)))}
+                    disabled={loading || (source.installed ? source.dirty : !source.cloneUrl)}
+                    onClick={(event) =>
+                      action(event, () =>
+                        source.installed ? pullRepository(source.repoId) : void prepareMissingRepositoryClone(source),
+                      )
+                    }
                   >
                     <CloudDownload aria-hidden="true" className={cn("h-3.5 w-3.5", loading && "animate-pulse")} />
                   </SmallAction>
-                  <SmallAction title="Remove this repository from Skill Manager without deleting its files." onClick={(event) => action(event, () => setSourceToRemove(source))}>
-                    <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
-                  </SmallAction>
-                </div>
-                {pullResults[repositoryItemId(source)] && (
-                  <div className="mt-2 truncate rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-700">
-                    {pullResults[repositoryItemId(source)]}
-                  </div>
-                )}
-              </div>
-            ))}
-            {(inventory?.sources ?? []).length > 0 && (
-              <div className="pt-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground">Local Folders</div>
-            )}
-            {(inventory?.sources ?? []).map((source) => (
-              <div
-                key={source.id}
-                role="button"
-                tabIndex={0}
-                title={`Filter the skill list to items from ${source.alias || basename(source.path)}.`}
-                className={cn(
-                  "source-card w-full cursor-pointer rounded-md border p-3 text-left transition hover:bg-slate-50",
-                  selectedSourceId === source.id && "source-card--selected border-blue-300 bg-blue-50",
-                )}
-                onClick={() => setSelectedSourceId(source.id)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setSelectedSourceId(source.id);
-                  }
-                }}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">{source.alias || basename(source.path)}</div>
-                    <div className="truncate text-xs text-muted-foreground">{source.path}</div>
-                  </div>
-                  {source.errorCount > 0 ? (
-                    <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-600" />
-                  ) : (
-                    <Circle aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-600" />
+                  {source.installed && (
+                    <SmallAction title="Remove this repository from Skill Manager without deleting its files." onClick={(event) => action(event, () => setSourceToRemove(source))}>
+                      <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                    </SmallAction>
                   )}
                 </div>
-                <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{source.skillCount} skills</span>
-                  <span>{formatDate(source.lastScannedAt)}</span>
-                </div>
-                <div className="mt-3 flex gap-1">
-                  <SmallAction title="Open this local folder in Finder." onClick={(event) => action(event, () => openPath(source.path))}>
-                    <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
-                  </SmallAction>
-                  <SmallAction title="Rename how this local folder appears in Skill Manager." onClick={(event) => action(event, () => setSourceToEdit(source))}>
-                    <SlidersHorizontal aria-hidden="true" className="h-3.5 w-3.5" />
-                  </SmallAction>
-                  <SmallAction title="Remove this local folder from Skill Manager without deleting its files." onClick={(event) => action(event, () => setSourceToRemove(source))}>
-                    <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
-                  </SmallAction>
-                </div>
+                {pullResults[source.repoId] && (
+                  <div className="mt-2 truncate rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-700">
+                    {pullResults[source.repoId]}
+                  </div>
+                )}
               </div>
             ))}
             <button
               aria-label="Show skills from all sources"
-              title="Clear the source filter and show skills from every repository and local folder."
+              title="Clear the source filter and show skills from every repository."
               className={cn(
                 "source-card source-card--all w-full rounded-md border p-3 text-left text-sm",
                 selectedSourceId === "all" && "source-card--selected border-blue-300 bg-blue-50",
@@ -603,16 +556,27 @@ function App() {
 
         <section className="workbench-panel workbench-panel--skills flex min-h-0 min-w-0 flex-col overflow-hidden bg-slate-50">
           <PanelHeader title="Skills">
-            <Button
-              variant="outline"
-              onClick={rescan}
-              disabled={loading}
-              title="Scan sources again and refresh the skills table."
-            >
-              <RefreshCcw aria-hidden="true" className={cn("h-4 w-4", loading && "animate-spin")} />
-              Rescan
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => void enableSkills(filteredSkills.map((skill) => skill.id))}
+                disabled={loading || bulkEnableSkillIds.length === 0}
+                title="Enable every eligible skill in the current filtered list; conflicts and invalid or missing skills are skipped."
+              >
+                <Check aria-hidden="true" className="h-4 w-4" />
+                Enable all
+              </Button>
+              <IconButton
+                onClick={rescan}
+                disabled={loading}
+                title="Scan repositories again and reconcile the shared skill state on this machine."
+              >
+                <RefreshCcw aria-hidden="true" className={cn("h-4 w-4", loading && "animate-spin")} />
+              </IconButton>
+            </div>
           </PanelHeader>
+          {pullResults.bulk && (
+            <div className="border-b border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{pullResults.bulk}</div>
+          )}
           <div className="filter-bar shrink-0 border-b border-border bg-white p-3">
             <div className="flex flex-wrap gap-2">
               <div className="relative min-w-0 flex-1">
@@ -762,29 +726,38 @@ function App() {
 
         <aside className="workbench-panel workbench-panel--detail flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
           <PanelHeader title="Skill Detail">
-            <IconButton
-              title="Open the selected skill's source folder in VS Code."
-              disabled={!selectedSkill}
-              onClick={() => selectedSkill && openInVSCode(selectedSkill.sourcePath)}
-            >
-              <VSCodeIcon className="h-4 w-4" />
-            </IconButton>
+            <div className="flex items-center gap-2">
+              {selectedSkill &&
+                selectedSkill.sourcePath &&
+                selectedSkill.status !== "missing-source" &&
+                selectedSkill.status !== "missing-path" && (
+                  <IconButton
+                    title="Open this skill's original source folder in Finder."
+                    onClick={() => openPath(selectedSkill.sourcePath)}
+                  >
+                    <Folder aria-hidden="true" className="h-4 w-4" />
+                  </IconButton>
+                )}
+              <IconButton
+                title="Open the selected skill's source folder in VS Code."
+                disabled={!selectedSkill}
+                onClick={() => selectedSkill && openInVSCode(selectedSkill.sourcePath)}
+              >
+                <VSCodeIcon className="h-4 w-4" />
+              </IconButton>
+            </div>
           </PanelHeader>
           <SkillDetail
             skill={selectedSkill}
             syncConfigured={Boolean(inventory?.syncConfigured)}
             llmConfig={inventory?.llmConfig}
             isGeneratingProfile={Boolean(selectedSkill && generatingProfileIds.has(selectedSkill.id))}
-            onEnable={enableSkill}
-            onEnableLocalOnly={enableSkillLocalOnly}
             onResolve={resolveConflict}
             onGenerateProfile={generateProfile}
             onReadEnv={readSkillEnv}
             onSaveEnv={saveSkillEnv}
             onSaveTags={saveSkillTags}
             onListFiles={listSkillFiles}
-            onRemoveFromSync={removeSkillFromSync}
-            onInstallRepository={setSkillToClone}
           />
         </aside>
       </main>
@@ -793,7 +766,7 @@ function App() {
         <Modal title="Add Repository" onClose={() => setAddSourceOpen(false)}>
           <div className="space-y-4">
             <label className="block text-sm font-medium">
-              Repository or Local Folder
+              Git Repository
               <div className="mt-2 flex gap-2">
                 <input
                     autoComplete="off"
@@ -805,7 +778,7 @@ function App() {
                 />
                 <Button
                   variant="outline"
-                  title="Open a folder picker and add the selected repository or local folder as a source."
+                  title="Open a folder picker and add the selected Git repository to the shared catalog."
                   onClick={async () => {
                     await browseAndAddSource();
                     setAddSourceOpen(false);
@@ -816,18 +789,34 @@ function App() {
               </div>
             </label>
             <div className="rounded-md border border-border bg-slate-50 p-3 text-xs text-muted-foreground">
-              Git folders are tracked as repositories and scanned recursively for SKILL.md. Non-git folders stay local-only.
+              The selected folder must be a Git repository with a usable remote. It is scanned recursively for SKILL.md.
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setAddSourceOpen(false)} title="Close this dialog without adding a source.">
                 Cancel
               </Button>
-              <Button title="Add the typed repository or local folder path and scan it for skills." onClick={submitSource}>
+              <Button title="Validate the typed Git repository, scan its skills, and add them to the shared catalog." onClick={submitSource}>
                 Add
               </Button>
             </div>
           </div>
         </Modal>
+      )}
+
+      {cloneDraft && (
+        <CloneDestinationModal
+          source={cloneDraft.source}
+          parentDir={cloneDraft.parentDir}
+          onClose={() => setCloneDraft(undefined)}
+          onClone={(folderName) =>
+            cloneRepository(
+              cloneDraft.source.repoId,
+              cloneDraft.source.cloneUrl ?? "",
+              cloneDraft.parentDir,
+              folderName,
+            )
+          }
+        />
       )}
 
       {settingsOpen && inventory && (
@@ -851,7 +840,7 @@ function App() {
           source={sourceToEdit}
           onClose={() => setSourceToEdit(undefined)}
           onSave={async (alias) => {
-            await renameSource(repositoryItemId(sourceToEdit), alias);
+            await renameSource(sourceToEdit.repoId, alias);
             setSourceToEdit(undefined);
           }}
         />
@@ -862,23 +851,12 @@ function App() {
           source={sourceToRemove}
           onClose={() => setSourceToRemove(undefined)}
           onRemove={async () => {
-            await removeSource(repositoryItemId(sourceToRemove));
+            await removeSource(sourceToRemove.repoId);
             setSourceToRemove(undefined);
           }}
         />
       )}
 
-      {skillToClone && (
-        <CloneRepositoryModal
-          skill={skillToClone}
-          onBrowseParent={browseForRepositoryFolder}
-          onClose={() => setSkillToClone(undefined)}
-          onClone={async (repoId, cloneUrl, parentDir, folderName) => {
-            await cloneRepository(repoId, cloneUrl, parentDir, folderName);
-            setSkillToClone(undefined);
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -890,6 +868,65 @@ function SummaryBar({ summary }: { summary: skillmgr.Summary }) {
       <SummaryItem label="Enabled" value={summary.enabled} tone="emerald" />
       <SummaryItem label="Conflicts" value={summary.conflicts} tone="amber" />
       <SummaryItem label="Invalid" value={summary.invalid} tone="rose" />
+    </div>
+  );
+}
+
+function SyncSetupScreen({
+  error,
+  loading,
+  loadingLabel,
+  onClearError,
+  onChooseFolder,
+}: {
+  error?: string;
+  loading: boolean;
+  loadingLabel?: string;
+  onClearError: () => void;
+  onChooseFolder: () => Promise<void>;
+}) {
+  return (
+    <div className="app-shell flex h-screen min-w-0 flex-col overflow-hidden bg-background">
+      <header className="app-topbar flex min-h-16 shrink-0 items-center px-5">
+        <div className="brand-lockup">
+          <img className="brand-mark" src={logoUniversal} alt="" width={36} height={36} />
+          <h1 className="brand-title">Skill Manager</h1>
+        </div>
+      </header>
+      {error && (
+        <div className="flex items-center justify-between border-b border-rose-200 bg-rose-50 px-5 py-2 text-sm text-rose-700">
+          <span>{error}</span>
+          <button className="rounded p-1 hover:bg-rose-100" onClick={onClearError} title="Hide this setup error." aria-label="Dismiss error">
+            <X aria-hidden="true" className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+      {loading && <LoadingOverlay label={loadingLabel || "Setting up shared storage..."} />}
+      <main className="flex min-h-0 flex-1 items-center justify-center bg-slate-50 p-6">
+        <section className="w-full max-w-xl border border-border bg-white p-6 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-cyan-50 text-cyan-700">
+              <CloudDownload aria-hidden="true" className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold">Choose shared storage</h2>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                Select the iCloud folder that will hold the shared skill catalog.
+              </p>
+            </div>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button
+              onClick={() => void onChooseFolder()}
+              disabled={loading}
+              title="Choose the required iCloud folder, then create or load the shared skill catalog there."
+            >
+              <FolderPlus aria-hidden="true" className="h-4 w-4" />
+              Choose folder
+            </Button>
+          </div>
+        </section>
+      </main>
     </div>
   );
 }
@@ -990,7 +1027,7 @@ function SkillSwitch({
   onDisable: () => void;
 }) {
   const checked = isActiveSkill(skill);
-  const disabled = ["invalid", "error", "missing", "missing-source", "missing-path"].includes(skill.status);
+  const disabled = ["invalid", "error", "missing-source", "missing-path"].includes(skill.status);
   const switchTitle = disabled
     ? "This skill cannot be enabled until its source or validation issues are fixed."
     : checked
@@ -1025,7 +1062,7 @@ function SkillSwitch({
 }
 
 function isActiveSkill(skill: skillmgr.Skill) {
-  return skill.isActive || skill.status === "synced" || skill.status === "syncing" || skill.status === "local-only";
+  return skill.isActive || skill.status === "enabled";
 }
 
 function linkedSkillPaths(skill: skillmgr.Skill) {
@@ -1063,31 +1100,23 @@ function SkillDetail({
   syncConfigured,
   llmConfig,
   isGeneratingProfile,
-  onEnable,
-  onEnableLocalOnly,
   onResolve,
   onGenerateProfile,
   onReadEnv,
   onSaveEnv,
   onSaveTags,
   onListFiles,
-  onRemoveFromSync,
-  onInstallRepository,
 }: {
   skill?: skillmgr.Skill;
   syncConfigured: boolean;
   llmConfig?: skillmgr.SyncLLMConfig;
   isGeneratingProfile: boolean;
-  onEnable: (skillId: string) => Promise<void>;
-  onEnableLocalOnly: (skillId: string) => Promise<void>;
   onResolve: (skillId: string) => Promise<void>;
   onGenerateProfile: (skillId: string, force?: boolean) => Promise<void>;
   onReadEnv: (skillId: string) => Promise<string>;
   onSaveEnv: (skillId: string, content: string) => Promise<void>;
   onSaveTags: (skillId: string, tags: string[]) => Promise<void>;
   onListFiles: (skillId: string, relativeDir: string) => Promise<skillmgr.SkillFileEntry[]>;
-  onRemoveFromSync: (skillId: string) => Promise<void>;
-  onInstallRepository: (skill: skillmgr.Skill) => void;
 }) {
   if (!skill) {
     return <div className="p-5 text-sm text-muted-foreground">No skill selected.</div>;
@@ -1114,14 +1143,7 @@ function SkillDetail({
         {activeLinkedPaths.length > 0 && <PathRow label="currently linked to" path={activeLinkedPaths} />}
       </DetailSection>
 
-      <SyncSection
-        skill={skill}
-        syncConfigured={syncConfigured}
-        onEnable={onEnable}
-        onEnableLocalOnly={onEnableLocalOnly}
-        onRemoveFromSync={onRemoveFromSync}
-        onInstallRepository={onInstallRepository}
-      />
+      <SourceSection skill={skill} />
 
       <SkillProfileSections
         skill={skill}
@@ -1365,34 +1387,10 @@ function FileTreeMessage({ children, depth = 0 }: { children: ReactNode; depth?:
   );
 }
 
-function SyncSection({
-  skill,
-  syncConfigured,
-  onEnable,
-  onEnableLocalOnly,
-  onRemoveFromSync,
-  onInstallRepository,
-}: {
-  skill: skillmgr.Skill;
-  syncConfigured: boolean;
-  onEnable: (skillId: string) => Promise<void>;
-  onEnableLocalOnly: (skillId: string) => Promise<void>;
-  onRemoveFromSync: (skillId: string) => Promise<void>;
-  onInstallRepository: (skill: skillmgr.Skill) => void;
-}) {
-  const desired =
-    skill.desiredEnabled === undefined ? "Not in sync" : skill.desiredEnabled ? "Enabled in sync" : "Disabled in sync";
+function SourceSection({ skill }: { skill: skillmgr.Skill }) {
   return (
-    <DetailSection title="Sync">
+    <DetailSection title="Source">
       <div className="min-w-0 space-y-2 rounded-md border border-border bg-slate-50 p-3 text-xs">
-        <div className="grid min-w-0 grid-cols-[minmax(0,96px)_minmax(0,1fr)] gap-2">
-          <span className="text-muted-foreground">desired</span>
-          <span className="truncate">{desired}</span>
-        </div>
-        <div className="grid min-w-0 grid-cols-[minmax(0,96px)_minmax(0,1fr)] gap-2">
-          <span className="text-muted-foreground">applied</span>
-          <span className="truncate">{skill.isActive ? "Enabled here" : "Not enabled here"}</span>
-        </div>
         {skill.repoId && (
           <div className="grid min-w-0 grid-cols-[minmax(0,96px)_minmax(0,1fr)] gap-2">
             <span className="text-muted-foreground">repo</span>
@@ -1414,44 +1412,6 @@ function SyncSection({
             </span>
           </div>
         )}
-        <div className="flex flex-wrap gap-2 pt-1">
-          {syncConfigured && !skill.isSynced && skill.canSync && skill.isActive && (
-            <Button
-              variant="outline"
-              onClick={() => void onEnable(skill.id)}
-              title="Add this active skill to the sync file so it can be enabled on other machines."
-            >
-              Add to Sync
-            </Button>
-          )}
-          {syncConfigured && skill.canSync && !skill.isActive && (
-            <Button
-              variant="outline"
-              onClick={() => void onEnableLocalOnly(skill.id)}
-              title="Enable this skill only on this machine without adding it to the sync file."
-            >
-              Enable Local Only
-            </Button>
-          )}
-          {skill.isSynced && (
-            <Button
-              variant="outline"
-              onClick={() => void onRemoveFromSync(skill.id)}
-              title="Remove this skill from the sync file while leaving local source files untouched."
-            >
-              Remove From Sync
-            </Button>
-          )}
-          {skill.status === "missing-source" && skill.repoId && (
-            <Button
-              variant="outline"
-              onClick={() => onInstallRepository(skill)}
-              title="Clone the missing repository so this synced skill can be installed locally."
-            >
-              Install Repository
-            </Button>
-          )}
-        </div>
       </div>
     </DetailSection>
   );
@@ -1471,7 +1431,7 @@ function SkillProfileSections({
   onGenerateProfile: (skillId: string, force?: boolean) => Promise<void>;
 }) {
   const profile = skill.profile;
-  const canGenerate = Boolean(syncConfigured && skill.canSync && skill.syncId && skill.sourcePath && llmConfigReady(llmConfig));
+  const canGenerate = Boolean(syncConfigured && skill.syncId && skill.sourcePath && llmConfigReady(llmConfig));
   const hasProfile = profileComplete(profile);
   const emptyMessage = isGenerating ? "正在生成..." : llmConfigReady(llmConfig) ? "尚未生成。" : "未配置 LLM。";
 
@@ -2058,94 +2018,76 @@ function SettingsModal({
   );
 }
 
-function CloneRepositoryModal({
-  skill,
-  onBrowseParent,
+function CloneDestinationModal({
+  source,
+  parentDir,
   onClose,
   onClone,
 }: {
-  skill: skillmgr.Skill;
-  onBrowseParent: () => Promise<string>;
+  source: skillmgr.Repository;
+  parentDir: string;
   onClose: () => void;
-  onClone: (repoId: string, cloneUrl: string, parentDir: string, folderName: string) => Promise<void>;
+  onClone: (folderName: string) => Promise<boolean>;
 }) {
-  const repoId = skill.repoId ?? "";
-  const [cloneUrl, setCloneUrl] = useState(skill.cloneUrl || defaultCloneUrl(repoId));
-  const [parentDir, setParentDir] = useState("");
-  const [folderName, setFolderName] = useState(defaultRepoFolderName(repoId));
+  const [folderName, setFolderName] = useState(() => defaultRepoFolderName(source.repoId));
   const [cloning, setCloning] = useState(false);
-  const finalPath = parentDir && folderName ? `${parentDir.replace(/[\\/]$/, "")}/${folderName}` : "";
+  const trimmedName = folderName.trim();
+  const validationError = cloneFolderNameError(trimmedName);
+  const destination = trimmedName ? `${parentDir.replace(/[\\/]$/, "")}/${trimmedName}` : parentDir;
 
   async function clone() {
+    if (validationError) return;
     setCloning(true);
     try {
-      await onClone(repoId, cloneUrl.trim(), parentDir.trim(), folderName.trim());
+      if (await onClone(trimmedName)) {
+        onClose();
+      }
     } finally {
       setCloning(false);
     }
   }
 
   return (
-    <Modal title="Install Repository" onClose={onClose}>
+    <Modal title="Clone Repository" onClose={() => !cloning && onClose()}>
       <div className="space-y-4">
-        <div className="rounded-md border border-border bg-slate-50 p-3 text-xs">
-          <div className="break-all font-mono">{repoId}</div>
-          {skill.repoSubpath && <div className="mt-1 break-all text-muted-foreground">{skill.repoSubpath}</div>}
+        <div className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+          <span className="text-muted-foreground">Repository</span>
+          <span className="truncate font-mono text-xs">{source.repoId}</span>
+          <span className="text-muted-foreground">Parent</span>
+          <span className="truncate font-mono text-xs">{parentDir}</span>
         </div>
-        <label className="block text-sm font-medium">
-          Clone URL
-          <input
-            autoComplete="off"
-            name="clone-url"
-            value={cloneUrl}
-            onChange={(event) => setCloneUrl(event.target.value)}
-            className="mt-2 h-9 w-full rounded-md border border-input px-3 text-sm"
-          />
-        </label>
-        <label className="block text-sm font-medium">
-          Parent folder
-          <div className="mt-2 flex gap-2">
-            <input
-              autoComplete="off"
-              name="clone-parent"
-              value={parentDir}
-              onChange={(event) => setParentDir(event.target.value)}
-              className="h-9 min-w-0 flex-1 rounded-md border border-input px-3 text-sm"
-              placeholder="/Users/me/Code"
-            />
-            <Button
-              variant="outline"
-              title="Open a folder picker for where the repository should be cloned."
-              onClick={async () => {
-                const path = await onBrowseParent();
-                if (path) setParentDir(path);
-              }}
-            >
-              Browse
-            </Button>
-          </div>
-        </label>
         <label className="block text-sm font-medium">
           Folder name
           <input
+            autoFocus
             autoComplete="off"
             name="clone-folder-name"
             value={folderName}
             onChange={(event) => setFolderName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !validationError && !cloning) {
+                event.preventDefault();
+                void clone();
+              }
+            }}
             className="mt-2 h-9 w-full rounded-md border border-input px-3 text-sm"
           />
         </label>
-        {finalPath && <div className="break-all rounded-md border border-border bg-slate-50 p-3 font-mono text-xs">{finalPath}</div>}
+        {validationError ? (
+          <div className="text-xs text-rose-700">{validationError}</div>
+        ) : (
+          <div className="break-all border-t border-border pt-3 font-mono text-xs text-muted-foreground">{destination}</div>
+        )}
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose} disabled={cloning} title="Close this dialog without cloning the repository.">
+          <Button variant="ghost" onClick={onClose} disabled={cloning} title="Cancel without cloning this repository.">
             Cancel
           </Button>
           <Button
-            onClick={clone}
-            disabled={cloning || !repoId || !cloneUrl.trim() || !parentDir.trim() || !folderName.trim()}
-            title="Clone this repository into the selected parent folder and add it as a Skill Manager source."
+            onClick={() => void clone()}
+            disabled={cloning || Boolean(validationError)}
+            title="Clone this shallow repository into the displayed destination and register it on this machine."
           >
-            {cloning ? "Cloning…" : "Clone"}
+            {cloning ? "Cloning..." : "Clone"}
           </Button>
         </div>
       </div>
@@ -2255,11 +2197,9 @@ function StatusPill({ status }: { status: string }) {
         statusClass[status] ?? statusClass.disabled,
       )}
     >
-      {status === "synced" && <Check aria-hidden="true" className="h-3 w-3" />}
+      {status === "enabled" && <Check aria-hidden="true" className="h-3 w-3" />}
       {status === "conflict" && <AlertTriangle aria-hidden="true" className="h-3 w-3" />}
       {(status === "missing-source" || status === "missing-path") && <AlertTriangle aria-hidden="true" className="h-3 w-3" />}
-      {status === "syncing" && <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin" />}
-      {status === "needs-apply" && <Loader2 aria-hidden="true" className="h-3 w-3" />}
       {statusLabels[status] ?? status}
     </span>
   );
@@ -2422,25 +2362,33 @@ function basename(path: string) {
 }
 
 function repositoryItemId(item: RepositoryPanelItem) {
-  return "repoId" in item && item.repoId ? item.repoId : item.id;
+  return item.sourceKey || item.repoId || item.id;
 }
 
 function repositoryItemTitle(item: RepositoryPanelItem) {
   if (item.alias) return item.alias;
-  if ("repoId" in item && item.repoId) return basename(item.repoId);
+  if (item.repoId) return basename(item.repoId);
   return basename(item.path);
 }
 
 function defaultRepoFolderName(repoId: string) {
-  return basename(repoId).replace(/\.git$/, "") || "repo";
+  const parts = repoId
+    .replace(/\.git$/, "")
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length >= 3) {
+    return `${parts[parts.length - 2]}-${parts[parts.length - 1]}`;
+  }
+  return parts[parts.length - 1] || "repo";
 }
 
-function defaultCloneUrl(repoId: string) {
-  return repoId ? `https://${repoId}.git` : "";
-}
-
-function primaryTargetDir(config: skillmgr.Config) {
-  return config.targetDirs?.[0] ?? "~/.agents/skills";
+function cloneFolderNameError(folderName: string) {
+  if (!folderName) return "Folder name is required.";
+  if (folderName === "." || folderName === "..") return "Choose a folder name other than '.' or '..'.";
+  if (folderName.includes("/") || folderName.includes("\\")) return "Folder name cannot contain path separators.";
+  if (folderName.startsWith("~") || /^[A-Za-z]:/.test(folderName)) return "Folder name must be relative to the selected parent.";
+  return "";
 }
 
 function targetDirsLabel(targetDirs?: string[]) {

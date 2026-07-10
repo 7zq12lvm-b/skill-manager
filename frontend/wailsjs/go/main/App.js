@@ -10,12 +10,12 @@ export function AddSource(arg1) {
   return window['go']['main']['App']['AddSource'](arg1);
 }
 
-export function AdoptCurrentEnabledSkills() {
-  return window['go']['main']['App']['AdoptCurrentEnabledSkills']();
+export function BrowseForCloneParent() {
+  return window['go']['main']['App']['BrowseForCloneParent']();
 }
 
-export function ApplySync() {
-  return window['go']['main']['App']['ApplySync']();
+export function BrowseForExistingRepository() {
+  return window['go']['main']['App']['BrowseForExistingRepository']();
 }
 
 export function BrowseForSource() {
@@ -42,8 +42,8 @@ export function EnableSkill(arg1) {
   return window['go']['main']['App']['EnableSkill'](arg1);
 }
 
-export function EnableSkillLocalOnly(arg1) {
-  return window['go']['main']['App']['EnableSkillLocalOnly'](arg1);
+export function EnableSkills(arg1) {
+  return window['go']['main']['App']['EnableSkills'](arg1);
 }
 
 export function GenerateSkillProfile(arg1, arg2) {
@@ -86,10 +86,6 @@ export function RemoveRepository(arg1) {
   return window['go']['main']['App']['RemoveRepository'](arg1);
 }
 
-export function RemoveSkillFromSync(arg1) {
-  return window['go']['main']['App']['RemoveSkillFromSync'](arg1);
-}
-
 export function RemoveSource(arg1) {
   return window['go']['main']['App']['RemoveSource'](arg1);
 }
@@ -124,4 +120,8 @@ export function SaveSkillEnvFile(arg1, arg2) {
 
 export function SaveSkillTags(arg1, arg2) {
   return window['go']['main']['App']['SaveSkillTags'](arg1, arg2);
+}
+
+export function UseExistingRepository(arg1, arg2) {
+  return window['go']['main']['App']['UseExistingRepository'](arg1, arg2);
 }

@@ -8,18 +8,15 @@ import (
 func TestSyncStoreSavesLLMConfigAndSkillProfile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), SyncFileName)
 	store := NewSyncStore(path)
-	syncID := "example.com/me/repo//skills/code-review"
+	syncID := "git:example.com/me/repo//skills/code-review"
 
 	err := store.Save(SyncDocument{
-		Version: 1,
+		Version: 2,
 		Skills: map[string]SyncSkillRecord{
 			syncID: {
 				Enabled:    true,
 				TargetName: "code-review",
-				Source: SyncSource{
-					RepoID:      "example.com/me/repo",
-					RepoSubpath: "skills/code-review",
-				},
+				Source:     SyncSource{Provider: GitProvider, ID: "example.com/me/repo", Locator: SourceLocator{Subpath: "skills/code-review"}},
 			},
 		},
 	})

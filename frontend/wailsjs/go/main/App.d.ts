@@ -6,9 +6,9 @@ export function AddRepository(arg1:string):Promise<skillmgr.Inventory>;
 
 export function AddSource(arg1:string):Promise<skillmgr.Inventory>;
 
-export function AdoptCurrentEnabledSkills():Promise<skillmgr.AdoptSyncResult>;
+export function BrowseForCloneParent():Promise<string>;
 
-export function ApplySync():Promise<skillmgr.ApplySyncResult>;
+export function BrowseForExistingRepository():Promise<string>;
 
 export function BrowseForSource():Promise<string>;
 
@@ -22,7 +22,7 @@ export function DisableSkill(arg1:string):Promise<skillmgr.Inventory>;
 
 export function EnableSkill(arg1:string):Promise<skillmgr.Inventory>;
 
-export function EnableSkillLocalOnly(arg1:string):Promise<skillmgr.Inventory>;
+export function EnableSkills(arg1:Array<string>):Promise<skillmgr.BulkEnableResult>;
 
 export function GenerateSkillProfile(arg1:string,arg2:boolean):Promise<skillmgr.SkillProfileResult>;
 
@@ -44,8 +44,6 @@ export function ReadSkillEnvFile(arg1:string):Promise<string>;
 
 export function RemoveRepository(arg1:string):Promise<skillmgr.Inventory>;
 
-export function RemoveSkillFromSync(arg1:string):Promise<skillmgr.Inventory>;
-
 export function RemoveSource(arg1:string):Promise<skillmgr.Inventory>;
 
 export function RenameRepository(arg1:string,arg2:string):Promise<skillmgr.Inventory>;
@@ -63,3 +61,5 @@ export function SaveLLMConfig(arg1:skillmgr.SyncLLMConfig):Promise<skillmgr.Inve
 export function SaveSkillEnvFile(arg1:string,arg2:string):Promise<skillmgr.Inventory>;
 
 export function SaveSkillTags(arg1:string,arg2:Array<string>):Promise<skillmgr.Inventory>;
+
+export function UseExistingRepository(arg1:string,arg2:string):Promise<skillmgr.Inventory>;

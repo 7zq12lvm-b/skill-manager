@@ -2,15 +2,15 @@ import { create } from "zustand";
 import { skillmgr } from "../../wailsjs/go/models";
 import {
   AddSource,
-  AdoptCurrentEnabledSkills,
-  ApplySync,
+  BrowseForCloneParent,
+  BrowseForExistingRepository,
   BrowseForSource,
   BrowseForSyncFolder,
   BrowseForTarget,
   CloneRepository,
   DisableSkill,
   EnableSkill,
-  EnableSkillLocalOnly,
+  EnableSkills,
   GenerateSkillProfile,
   GetInventory,
   ListSkillFiles,
@@ -20,7 +20,6 @@ import {
   PullSource,
   ReadSkillEnvFile,
   RemoveSource,
-  RemoveSkillFromSync,
   RenameRepository,
   RenameSource,
   RescanAll,
@@ -29,6 +28,7 @@ import {
   SaveLLMConfig,
   SaveSkillEnvFile,
   SaveSkillTags,
+  UseExistingRepository,
 } from "../../wailsjs/go/main/App";
 
 type StatusFilter = "all" | string;
@@ -56,12 +56,10 @@ type SkillStore = {
   pullSource: (sourceId: string) => Promise<void>;
   pullRepository: (repoId: string) => Promise<void>;
   enableSkill: (skillId: string) => Promise<void>;
-  enableSkillLocalOnly: (skillId: string) => Promise<void>;
+  enableSkills: (skillIds: string[]) => Promise<void>;
   disableSkill: (skillId: string) => Promise<void>;
-  removeSkillFromSync: (skillId: string) => Promise<void>;
-  applySync: () => Promise<void>;
-  adoptCurrentEnabledSkills: () => Promise<void>;
-  cloneRepository: (repoId: string, cloneUrl: string, parentDir: string, folderName: string) => Promise<void>;
+  cloneRepository: (repoId: string, cloneUrl: string, parentDir: string, folderName: string) => Promise<boolean>;
+  useExistingRepository: (repoId: string) => Promise<void>;
   resolveConflict: (skillId: string) => Promise<void>;
   saveConfig: (config: skillmgr.Config) => Promise<void>;
   saveLLMConfig: (config: skillmgr.SyncLLMConfig) => Promise<void>;
@@ -182,7 +180,7 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
   },
   browseForRepositoryFolder: async () => {
     try {
-      return await BrowseForSource();
+      return await BrowseForCloneParent();
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });
       return "";
@@ -222,40 +220,26 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
     }
   },
   enableSkill: async (skillId) => runWithInventory(set, () => EnableSkill(skillId), "Enabling skill..."),
-  enableSkillLocalOnly: async (skillId) => runWithInventory(set, () => EnableSkillLocalOnly(skillId), "Enabling skill..."),
+  enableSkills: async (skillIds) => {
+    set({ loading: true, loadingLabel: "Enabling listed skills...", error: undefined });
+    await waitForPaint();
+    try {
+      const result = await EnableSkills(skillIds);
+      const failed = result.failed?.length ? `, ${result.failed.length} failed` : "";
+      set({
+        inventory: result.inventory,
+        loading: false,
+        loadingLabel: undefined,
+        pullResults: {
+          ...get().pullResults,
+          bulk: `Enabled ${result.enabled}, already enabled ${result.alreadyEnabled}, skipped ${result.skipped}${failed}.`,
+        },
+      });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
+    }
+  },
   disableSkill: async (skillId) => runWithInventory(set, () => DisableSkill(skillId), "Disabling skill..."),
-  removeSkillFromSync: async (skillId) => runWithInventory(set, () => RemoveSkillFromSync(skillId), "Updating sync..."),
-  applySync: async () => {
-    set({ loading: true, loadingLabel: "Applying sync...", error: undefined });
-    await waitForPaint();
-    try {
-      const result = await ApplySync();
-      set({
-        inventory: result.inventory,
-        loading: false,
-        loadingLabel: undefined,
-        pullResults: { ...get().pullResults, sync: result.message },
-      });
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
-    }
-  },
-  adoptCurrentEnabledSkills: async () => {
-    set({ loading: true, loadingLabel: "Adopting enabled skills...", error: undefined });
-    await waitForPaint();
-    try {
-      const result = await AdoptCurrentEnabledSkills();
-      const skipped = result.skipped?.length ? `, skipped ${result.skipped.length}` : "";
-      set({
-        inventory: result.inventory,
-        loading: false,
-        loadingLabel: undefined,
-        pullResults: { ...get().pullResults, sync: `Adopted ${result.adopted}${skipped}` },
-      });
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
-    }
-  },
   cloneRepository: async (repoId, cloneUrl, parentDir, folderName) => {
     set({ loading: true, loadingLabel: "Cloning repository...", error: undefined });
     await waitForPaint();
@@ -267,6 +251,21 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
         loadingLabel: undefined,
         pullResults: { ...get().pullResults, [repoId]: result.message },
       });
+      return true;
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
+      return false;
+    }
+  },
+  useExistingRepository: async (repoId) => {
+    set({ error: undefined });
+    try {
+      const path = await BrowseForExistingRepository();
+      if (!path) return;
+      set({ loading: true, loadingLabel: "Linking existing repository...", error: undefined });
+      await waitForPaint();
+      const inventory = await UseExistingRepository(repoId, path);
+      set({ inventory, loading: false, loadingLabel: undefined });
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
     }

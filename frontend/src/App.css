@@ -211,7 +211,7 @@
   font-size: 0.7rem;
 }
 
-.status-pill--synced {
+.status-pill--enabled {
   border-color: color-mix(in srgb, var(--sm-enabled), white 58%);
   background: var(--sm-enabled-soft);
   color: var(--sm-enabled);
@@ -224,12 +224,6 @@
   color: #66717d;
 }
 
-.status-pill--local-only {
-  border-color: color-mix(in srgb, var(--sm-violet), white 58%);
-  background: color-mix(in srgb, var(--sm-violet), white 90%);
-  color: var(--sm-violet);
-}
-
 .status-pill--conflict {
   border-color: color-mix(in srgb, var(--sm-conflict), white 52%);
   background: var(--sm-conflict-soft);
@@ -240,12 +234,6 @@
   border-color: color-mix(in srgb, var(--sm-danger), white 54%);
   background: var(--sm-danger-soft);
   color: var(--sm-danger);
-}
-
-.status-pill--syncing {
-  border-color: color-mix(in srgb, var(--sm-link), white 52%);
-  background: var(--sm-link-soft);
-  color: var(--sm-link-dark);
 }
 
 .summary-item {

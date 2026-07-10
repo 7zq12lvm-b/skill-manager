@@ -39,9 +39,6 @@ func pullGitRepository(ctx context.Context, path string) (string, error) {
 		return "", fmt.Errorf("source path is not inside a git repository: %s", path)
 	}
 	args := []string{"-C", path, "pull", "--ff-only"}
-	if gitIsShallowRepository(ctx, path) {
-		args = append(args, "--depth=1")
-	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	var output bytes.Buffer
 	cmd.Stdout = &output
@@ -70,6 +67,10 @@ func cloneGitRepository(ctx context.Context, cloneURL, parentDir, folderName str
 	if strings.TrimSpace(folderName) == "" {
 		return "", "", errors.New("folder name is required")
 	}
+	folderName = strings.TrimSpace(folderName)
+	if err := validateCloneFolderName(folderName); err != nil {
+		return "", "", err
+	}
 	if _, err := exec.LookPath("git"); err != nil {
 		return "", "", errors.New("git command not found")
 	}
@@ -90,6 +91,19 @@ func cloneGitRepository(ctx context.Context, cloneURL, parentDir, folderName str
 		message = "Clone completed."
 	}
 	return targetPath, message, nil
+}
+
+func validateCloneFolderName(folderName string) error {
+	if folderName == "." || folderName == ".." {
+		return errors.New("folder name must not be . or ..")
+	}
+	if filepath.IsAbs(folderName) || strings.ContainsAny(folderName, `/\`) || strings.HasPrefix(folderName, "~") {
+		return errors.New("folder name must be a single relative directory name")
+	}
+	if len(folderName) >= 2 && folderName[1] == ':' {
+		return errors.New("folder name must not be an absolute Windows path")
+	}
+	return nil
 }
 
 func gitRemoteURL(ctx context.Context, path string) (string, bool) {
@@ -124,17 +138,6 @@ func gitCurrentRef(ctx context.Context, path string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(output))
-}
-
-func gitIsShallowRepository(ctx context.Context, path string) bool {
-	if _, err := exec.LookPath("git"); err != nil {
-		return false
-	}
-	output, err := exec.CommandContext(ctx, "git", "-C", path, "rev-parse", "--is-shallow-repository").Output()
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(string(output)) == "true"
 }
 
 var scpLikeGitRemote = regexp.MustCompile(`^(?:[^@]+@)?([^:]+):/?(.+)$`)
@@ -180,7 +183,7 @@ func syncSkillID(repoID, repoSubpath string) string {
 	if repoID == "" || repoSubpath == "" {
 		return ""
 	}
-	return repoID + "//" + repoSubpath
+	return "git:" + repoID + "//" + repoSubpath
 }
 
 func cleanRepoSubpath(path string) string {

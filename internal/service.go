@@ -102,7 +102,6 @@ func (s *Service) ScanWithSync(ctx context.Context, config Config, syncDocument 
 				TargetPath:    filepath.Join(config.TargetDirs[0], targetName),
 				SymlinkPath:   filepath.Join(config.TargetDirs[0], targetName),
 				Status:        StatusDisabled,
-				LocalOnly:     true,
 				LastScannedAt: scannedAt,
 			}
 			attachSkillMetadata(&skill)
@@ -119,6 +118,7 @@ func (s *Service) ScanWithSync(ctx context.Context, config Config, syncDocument 
 	applySyncDocument(&skills, config, syncDocument, scannedAt)
 	applySyncProfiles(skills, syncDocument)
 	deriveStatuses(skills, config.TargetDirs)
+	repositories = projectSharedRepositories(repositories, syncDocument)
 	sort.Slice(skills, func(i, j int) bool {
 		if skills[i].Name == skills[j].Name {
 			return skills[i].SourcePath < skills[j].SourcePath
@@ -142,6 +142,8 @@ func (s *Service) scanRepository(ctx context.Context, config RepositoryConfig, a
 	s.logf("scan repository start repo_id=%q path=%q scan_roots=%v ignore_paths=%v", config.RepoID, config.Path, config.ScanRoots, config.IgnorePaths)
 	repository := Repository{
 		ID:            config.ID,
+		Provider:      GitProvider,
+		SourceKey:     PortableSourceKey(GitProvider, config.RepoID),
 		RepoID:        config.RepoID,
 		Path:          config.Path,
 		Alias:         config.Alias,
@@ -149,6 +151,7 @@ func (s *Service) scanRepository(ctx context.Context, config RepositoryConfig, a
 		CloneURL:      config.CloneURL,
 		ScanRoots:     append([]string(nil), config.ScanRoots...),
 		IgnorePaths:   append([]string(nil), config.IgnorePaths...),
+		Installed:     true,
 		LastScannedAt: scannedAt,
 	}
 	if !config.Enabled {
@@ -165,6 +168,12 @@ func (s *Service) scanRepository(ctx context.Context, config RepositoryConfig, a
 	repository.IsGitRepo = true
 	if !samePath(gitRoot, config.Path) {
 		repository.Path = gitRoot
+	}
+	if repository.CloneURL == "" {
+		if remote, ok := gitRemoteURL(ctx, repository.Path); ok {
+			repository.CloneURL = remote
+			config.CloneURL = remote
+		}
 	}
 	repository.CurrentRef = gitCurrentRef(ctx, repository.Path)
 
@@ -188,6 +197,7 @@ func (s *Service) scanRepository(ctx context.Context, config RepositoryConfig, a
 			Name:          targetName,
 			TargetName:    targetName,
 			SourceID:      config.ID,
+			SourceKey:     PortableSourceKey(GitProvider, config.RepoID),
 			SourceAlias:   displayRepositoryName(config),
 			SourcePath:    skillPath,
 			RepoID:        config.RepoID,
@@ -198,7 +208,6 @@ func (s *Service) scanRepository(ctx context.Context, config RepositoryConfig, a
 			SymlinkPath:   filepath.Join(appConfig.TargetDirs[0], targetName),
 			Status:        StatusDisabled,
 			CanSync:       config.RepoID != "",
-			LocalOnly:     config.RepoID == "",
 			Ref:           repository.CurrentRef,
 			LastScannedAt: scannedAt,
 		}
@@ -451,27 +460,28 @@ func deriveStatuses(skills []Skill, targetDirs []string) {
 					if desiredEnabledCount > 1 {
 						skill.Status = StatusConflict
 					} else if activeCount == len(targetStates) {
-						skill.Status = StatusSynced
+						skill.Status = StatusEnabled
 					} else if conflictTarget != "" {
 						skill.Status = StatusConflict
 						skill.SymlinkTarget = conflictTarget
 					} else {
-						skill.Status = StatusNeedsApply
+						skill.Status = StatusDisabled
 					}
 				} else if activeCount > 0 {
-					skill.Status = StatusNeedsApply
+					skill.Status = StatusEnabled
 				} else {
 					skill.Status = StatusDisabled
 				}
 			} else if !hasSymlink {
 				skill.Status = StatusDisabled
 			} else if activeCount > 0 {
-				skill.Status = StatusLocalOnly
+				skill.Status = StatusEnabled
 			} else if conflictTarget != "" {
 				skill.Status = StatusConflict
 				skill.SymlinkTarget = conflictTarget
 			} else {
-				skill.Status = StatusSyncing
+				skill.Status = StatusError
+				skill.Error = "target link could not be resolved"
 			}
 		}
 
@@ -514,12 +524,12 @@ func applySyncDocument(skills *[]Skill, config Config, document SyncDocument, sc
 			applySyncRecordToSkill(skill, id, record, &desired)
 			continue
 		}
-		repository, hasRepository := repositories[record.Source.RepoID]
+		repository, hasRepository := repositories[record.Source.ID]
 		sourcePath := ""
 		status := StatusMissingSource
 		errorMessage := "repository is not configured on this machine"
 		if hasRepository {
-			sourcePath = filepath.Join(repository.Path, filepath.FromSlash(record.Source.RepoSubpath))
+			sourcePath = filepath.Join(repository.Path, filepath.FromSlash(record.Source.Locator.Subpath))
 			status = StatusMissingPath
 			errorMessage = "SKILL.md was not found at the synced repository path"
 		}
@@ -529,18 +539,19 @@ func applySyncDocument(skills *[]Skill, config Config, document SyncDocument, sc
 			Name:                record.TargetName,
 			TargetName:          record.TargetName,
 			PreviousTargetNames: append([]string(nil), record.PreviousTargetNames...),
-			SourceID:            record.Source.RepoID,
-			SourceAlias:         record.Source.RepoID,
+			SourceID:            record.Source.ID,
+			SourceKey:           PortableSourceKey(record.Source.Provider, record.Source.ID),
+			SourceAlias:         record.Source.ID,
 			SourcePath:          sourcePath,
-			RepoID:              record.Source.RepoID,
+			RepoID:              record.Source.ID,
 			RepoPath:            repository.Path,
-			RepoSubpath:         record.Source.RepoSubpath,
-			CloneURL:            record.Source.CloneURL,
+			RepoSubpath:         record.Source.Locator.Subpath,
+			CloneURL:            record.Source.Locator.CloneURL,
 			Status:              status,
 			IsSynced:            true,
 			DesiredEnabled:      &desired,
 			CanSync:             true,
-			Ref:                 record.Source.Ref,
+			Ref:                 record.Source.Locator.Ref,
 			Tags:                append([]string(nil), record.Tags...),
 			Profile:             cloneSkillProfile(record.Profile),
 			Error:               errorMessage,
@@ -554,6 +565,7 @@ func applySyncRecordToSkill(skill *Skill, syncID string, record SyncSkillRecord,
 	currentRef := skill.Ref
 	skill.ID = syncID
 	skill.SyncID = syncID
+	skill.SourceKey = PortableSourceKey(record.Source.Provider, record.Source.ID)
 	skill.IsSynced = true
 	skill.DesiredEnabled = desired
 	skill.TargetName = record.TargetName
@@ -561,15 +573,64 @@ func applySyncRecordToSkill(skill *Skill, syncID string, record SyncSkillRecord,
 	skill.PreviousTargetNames = append([]string(nil), record.PreviousTargetNames...)
 	skill.Tags = append([]string(nil), record.Tags...)
 	skill.Profile = cloneSkillProfile(record.Profile)
-	skill.RefMismatch = record.Source.Ref != "" && currentRef != "" && currentRef != record.Source.Ref
-	skill.Ref = record.Source.Ref
-	skill.CloneURL = record.Source.CloneURL
+	skill.RefMismatch = record.Source.Locator.Ref != "" && currentRef != "" && currentRef != record.Source.Locator.Ref
+	skill.Ref = record.Source.Locator.Ref
+	skill.CloneURL = record.Source.Locator.CloneURL
 	if skill.RepoID == "" {
-		skill.RepoID = record.Source.RepoID
+		skill.RepoID = record.Source.ID
 	}
 	if skill.RepoSubpath == "" {
-		skill.RepoSubpath = record.Source.RepoSubpath
+		skill.RepoSubpath = record.Source.Locator.Subpath
 	}
+}
+
+func projectSharedRepositories(installed []Repository, document SyncDocument) []Repository {
+	repositories := append([]Repository(nil), installed...)
+	bySource := make(map[string]int, len(repositories))
+	for index := range repositories {
+		if repositories[index].Provider == "" {
+			repositories[index].Provider = GitProvider
+		}
+		if repositories[index].SourceKey == "" {
+			repositories[index].SourceKey = PortableSourceKey(repositories[index].Provider, repositories[index].RepoID)
+		}
+		repositories[index].Installed = true
+		bySource[repositories[index].SourceKey] = index
+	}
+
+	sharedCounts := map[string]int{}
+	for _, record := range document.Skills {
+		key := PortableSourceKey(record.Source.Provider, record.Source.ID)
+		if key == "" {
+			continue
+		}
+		sharedCounts[key]++
+		if index, exists := bySource[key]; exists {
+			if repositories[index].CloneURL == "" {
+				repositories[index].CloneURL = record.Source.Locator.CloneURL
+			}
+			continue
+		}
+		bySource[key] = len(repositories)
+		repositories = append(repositories, Repository{
+			ID:        key,
+			Provider:  record.Source.Provider,
+			SourceKey: key,
+			RepoID:    record.Source.ID,
+			CloneURL:  record.Source.Locator.CloneURL,
+			IsGitRepo: record.Source.Provider == GitProvider,
+			Installed: false,
+		})
+	}
+	for index := range repositories {
+		if count := sharedCounts[repositories[index].SourceKey]; count > 0 {
+			repositories[index].SkillCount = count
+		}
+	}
+	sort.Slice(repositories, func(i, j int) bool {
+		return repositories[i].SourceKey < repositories[j].SourceKey
+	})
+	return repositories
 }
 
 func applySyncProfiles(skills []Skill, document SyncDocument) {

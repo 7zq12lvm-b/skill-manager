@@ -37,7 +37,7 @@ func TestScanDiscoversFirstLevelSkillsAndDerivesStatuses(t *testing.T) {
 	if inventory.Summary.SkillsFound != 2 {
 		t.Fatalf("expected 2 first-level skills, got %d", inventory.Summary.SkillsFound)
 	}
-	assertSkillStatus(t, inventory, "summarize-pdf", StatusLocalOnly)
+	assertSkillStatus(t, inventory, "summarize-pdf", StatusEnabled)
 	assertSkillStatus(t, inventory, "code-review", StatusDisabled)
 }
 
@@ -152,7 +152,7 @@ func TestScanMarksPartiallySyncedSkillAsSyncing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertSkillStatus(t, inventory, "code-review", StatusLocalOnly)
+	assertSkillStatus(t, inventory, "code-review", StatusEnabled)
 	if len(inventory.Skills) != 1 || len(inventory.Skills[0].TargetStates) != 2 {
 		t.Fatalf("expected two target states, got %#v", inventory.Skills)
 	}
@@ -598,14 +598,11 @@ func TestScanWithSyncShowsMissingSource(t *testing.T) {
 	enabled := true
 	inventory, err := NewService().ScanWithSync(context.Background(), Config{
 		TargetDirs: []string{filepath.Join(root, "target")},
-	}, SyncDocument{Version: 1, Skills: map[string]SyncSkillRecord{
-		"example.com/me/repo//skills/code-review": {
+	}, SyncDocument{Version: 2, Skills: map[string]SyncSkillRecord{
+		"git:example.com/me/repo//skills/code-review": {
 			Enabled:    true,
 			TargetName: "code-review",
-			Source: SyncSource{
-				RepoID:      "example.com/me/repo",
-				RepoSubpath: "skills/code-review",
-			},
+			Source:     SyncSource{Provider: GitProvider, ID: "example.com/me/repo", Locator: SourceLocator{Subpath: "skills/code-review"}},
 		},
 	}})
 	if err != nil {
@@ -620,9 +617,73 @@ func TestScanWithSyncShowsMissingSource(t *testing.T) {
 	if inventory.Skills[0].DesiredEnabled == nil || *inventory.Skills[0].DesiredEnabled != enabled {
 		t.Fatalf("expected desired enabled true, got %#v", inventory.Skills[0].DesiredEnabled)
 	}
+	if len(inventory.Repositories) != 1 || inventory.Repositories[0].Installed || inventory.Repositories[0].RepoID != "example.com/me/repo" {
+		t.Fatalf("expected shared repository to remain visible as missing, got %#v", inventory.Repositories)
+	}
 }
 
-func TestScanWithSyncMarksAvailableSkillNeedsApply(t *testing.T) {
+func TestProjectSharedRepositoriesIncludesMissingAndInstalledSources(t *testing.T) {
+	document := SyncDocument{Version: 2, Skills: map[string]SyncSkillRecord{
+		"git:example.com/missing/repo//skills/one": {
+			TargetName: "one",
+			Source: SyncSource{
+				Provider: GitProvider,
+				ID:       "example.com/missing/repo",
+				Locator:  SourceLocator{CloneURL: "https://example.com/missing/repo.git", Subpath: "skills/one"},
+			},
+		},
+		"git:example.com/missing/repo//skills/two": {
+			TargetName: "two",
+			Source: SyncSource{
+				Provider: GitProvider,
+				ID:       "example.com/missing/repo",
+				Locator:  SourceLocator{CloneURL: "https://example.com/missing/repo.git", Subpath: "skills/two"},
+			},
+		},
+		"git:example.com/installed/repo//skill": {
+			TargetName: "skill",
+			Source: SyncSource{
+				Provider: GitProvider,
+				ID:       "example.com/installed/repo",
+				Locator:  SourceLocator{CloneURL: "https://example.com/installed/repo.git", Subpath: "skill"},
+			},
+		},
+	}}
+	projected := projectSharedRepositories([]Repository{{
+		RepoID:     "example.com/installed/repo",
+		Path:       "/tmp/installed",
+		Installed:  true,
+		SkillCount: 3,
+	}}, document)
+	if len(projected) != 2 {
+		t.Fatalf("expected two projected repositories, got %#v", projected)
+	}
+	byID := map[string]Repository{}
+	for _, repository := range projected {
+		byID[repository.RepoID] = repository
+	}
+	missing := byID["example.com/missing/repo"]
+	if missing.Installed || missing.SkillCount != 2 || missing.CloneURL == "" {
+		t.Fatalf("unexpected missing repository projection: %#v", missing)
+	}
+	installed := byID["example.com/installed/repo"]
+	if !installed.Installed || installed.Path != "/tmp/installed" || installed.SkillCount != 1 {
+		t.Fatalf("unexpected installed repository projection: %#v", installed)
+	}
+}
+
+func TestProjectSharedRepositoriesPreservesLocalSourceWithoutSharedSkills(t *testing.T) {
+	projected := projectSharedRepositories([]Repository{{
+		RepoID:     "example.com/local/repo",
+		Path:       "/tmp/local",
+		SkillCount: 4,
+	}}, SyncDocument{Version: 2, Skills: map[string]SyncSkillRecord{}})
+	if len(projected) != 1 || !projected[0].Installed || projected[0].SkillCount != 4 {
+		t.Fatalf("expected local-only installation to remain visible, got %#v", projected)
+	}
+}
+
+func TestScanWithSyncLeavesAvailableDesiredSkillDisabledUntilReconciled(t *testing.T) {
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
 	mustWrite(t, filepath.Join(repo, "skills", "code-review", "SKILL.md"), "# code review\n")
@@ -641,20 +702,17 @@ func TestScanWithSyncMarksAvailableSkillNeedsApply(t *testing.T) {
 			Enabled:   true,
 			ScanRoots: []string{"."},
 		}},
-	}, SyncDocument{Version: 1, Skills: map[string]SyncSkillRecord{
-		"example.com/me/repo//skills/code-review": {
+	}, SyncDocument{Version: 2, Skills: map[string]SyncSkillRecord{
+		"git:example.com/me/repo//skills/code-review": {
 			Enabled:    true,
 			TargetName: "code-review",
-			Source: SyncSource{
-				RepoID:      "example.com/me/repo",
-				RepoSubpath: "skills/code-review",
-			},
+			Source:     SyncSource{Provider: GitProvider, ID: "example.com/me/repo", Locator: SourceLocator{Subpath: "skills/code-review"}},
 		},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertSkillStatus(t, inventory, "code-review", StatusNeedsApply)
+	assertSkillStatus(t, inventory, "code-review", StatusDisabled)
 }
 
 func TestScanWithSyncAppliesTopLevelProfileWithoutSyncingSkill(t *testing.T) {
@@ -667,7 +725,7 @@ func TestScanWithSyncAppliesTopLevelProfileWithoutSyncingSkill(t *testing.T) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("TEST_GIT_ROOT", repo)
 
-	syncID := "example.com/me/repo//skills/code-review"
+	syncID := "git:example.com/me/repo//skills/code-review"
 	inventory, err := NewService().ScanWithSync(context.Background(), Config{
 		TargetDirs: []string{filepath.Join(root, "target")},
 		Repositories: []RepositoryConfig{{
@@ -677,7 +735,7 @@ func TestScanWithSyncAppliesTopLevelProfileWithoutSyncingSkill(t *testing.T) {
 			Enabled:   true,
 			ScanRoots: []string{"."},
 		}},
-	}, SyncDocument{Version: 1, Profiles: map[string]SkillProfile{
+	}, SyncDocument{Version: 2, Profiles: map[string]SkillProfile{
 		syncID: {
 			SummaryZh:  "代码审阅助手。",
 			UseCasesZh: []string{"检查 PR 风险。"},
