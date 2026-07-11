@@ -1,0 +1,30 @@
+internal/sync_store.go
+  s_f09d22e173b3b3::t_43248f8bce8f15 100,121,153
+  s_f09d22e173b3b3::t_4248c8a1f17ec1 105-106,110-113,117,127-128,131,135-136,138-146,150,263-264,271,324,329,332,400-401,404-405,414,418-419,422-425,428,430-436
+  s_f09d22e173b3b3::t_2b6a09f805c437 262,267-270
+  s_f09d22e173b3b3::t_8f8443dfc706cf 308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "f06d47251830cadad2eb8914365d0499d74ecd15",
+  "prompts": {},
+  "sessions": {
+    "s_8fbd275333a44a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f36ab-c2ab-78d1-a502-2f6a451ed944",
+        "model": "gpt-5.5"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    },
+    "s_f09d22e173b3b3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f5024-7028-7641-a7d4-bdc54d741c96",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
