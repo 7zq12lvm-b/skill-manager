@@ -16,19 +16,22 @@ The note belongs inside each skill record, beside `tags` and `enabled`. A separa
 
 ## Backend Interface
 
-Expose one operation:
+Expose two operations:
 
 ```text
 SaveSkillNote(skillID, note) -> Inventory
+RemoveMissingSkill(skillID) -> Inventory
 ```
 
-The operation:
+The `SaveSkillNote` operation:
 
 1. Resolves the selected skill and requires it to exist in the shared catalog.
 2. Builds the current sync record without changing enabled state, tags, profile, source locator, or target name.
 3. Replaces only the normalized note.
 4. Writes the sync document atomically through `SyncStore`.
 5. Refreshes and returns the inventory.
+
+`RemoveMissingSkill` is intentionally restricted to a skill whose current status is `missing-path`. It removes managed target symlinks that still point to the missing source path, deletes the skill record from the shared Sync JSON, refreshes inventory, and returns the result. It must not remove repository files or accept installed, valid, or merely `missing-source` skills.
 
 ## Skills Table
 
@@ -52,6 +55,17 @@ The note is not included in search or bulk actions in this change.
 
 Both surfaces update through the same store action and receive the refreshed inventory returned by the backend.
 
+## Missing Path Removal
+
+`Missing Path` means the repository is linked on this machine, but the synced skill's recorded `repoSubpath` no longer contains a valid Skill. Deleting or moving the original skill folder, or removing its required `SKILL.md`, produces this state after a rescan.
+
+- Show a trash icon in the Skill Detail toolbar only when the selected skill is `missing-path`.
+- Its tooltip explains that the action removes the missing skill from the shared catalog on every synced device; it does not delete repository files.
+- Require a confirmation dialog naming the skill and explaining the cross-device effect.
+- On confirmation, remove only managed target symlinks that still refer to this skill, then delete its record from `skill-manager-sync.json`.
+- Close the confirmation dialog and select the next available skill after the refreshed inventory arrives.
+- Do not offer this action for `missing-source`: that status means the repository checkout is unavailable on this machine, not that the skill has been deleted upstream.
+
 ## Responsive Behavior
 
 - The new table column participates in the existing resizable percentage-width system.
@@ -67,12 +81,15 @@ Backend tests cover:
 - Clearing a note and omitting it from serialized JSON.
 - Loading notes from an existing sync document.
 - Applying notes to installed and missing skills after refresh.
+- Rejecting removal unless the current status is `missing-path`.
+- Removing a missing skill record and its matching managed target symlink without touching unrelated paths.
 
 Frontend verification covers:
 
 - Empty and populated Note cells.
 - Blur save, keyboard save, and Escape cancellation.
 - Detail placement before Paths and immediate refresh after save.
+- Missing Path removal visibility, confirmation, cancellation, and post-removal selection.
 - Desktop, split, and compact layouts without horizontal page overflow.
 
 Production verification runs TypeScript/Vite build, Go tests, Go vet, and `wails build`.
