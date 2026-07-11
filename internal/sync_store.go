@@ -1,24 +1,16 @@
 package skillmgr
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
-
-	_ "modernc.org/sqlite"
 )
 
-const (
-	SyncFileName           = "skill-manager-sync.db"
-	LegacySyncFileName     = "skill-manager-sync.json"
-	LegacySyncBackupSuffix = ".migrated.bak"
-)
+const SyncFileName = "skill-manager-sync.json"
 
 type SyncStore struct {
 	path string
@@ -78,119 +70,63 @@ func (s *SyncStore) Path() string {
 }
 
 func (s *SyncStore) Load() (SyncDocument, error) {
-	document := emptySyncDocument()
+	document := SyncDocument{
+		Version: 2,
+		Skills:  map[string]SyncSkillRecord{},
+	}
 	if s == nil || s.path == "" {
 		return document, nil
 	}
-	db, err := s.open()
+	data, err := os.ReadFile(s.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return document, nil
+	}
 	if err != nil {
 		return document, err
 	}
-	defer db.Close()
-	tx, err := db.Begin()
-	if err != nil {
+	if err := json.Unmarshal(data, &document); err != nil {
 		return document, err
 	}
-	defer tx.Rollback()
-
-	row := tx.QueryRow(`SELECT base_url, api_key, model, temperature, max_tokens FROM llm_config WHERE id = 1`)
-	if err := row.Scan(&document.LLM.BaseURL, &document.LLM.APIKey, &document.LLM.Model, &document.LLM.Temperature, &document.LLM.MaxTokens); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return document, err
-	}
-	profileRows, err := tx.Query(`SELECT sync_id, profile_json FROM profiles`)
-	if err != nil {
-		return document, err
-	}
-	for profileRows.Next() {
-		var syncID, raw string
-		if err := profileRows.Scan(&syncID, &raw); err != nil {
-			profileRows.Close()
-			return document, err
-		}
-		var profile SkillProfile
-		if err := json.Unmarshal([]byte(raw), &profile); err != nil {
-			profileRows.Close()
-			return document, fmt.Errorf("decode profile %q: %w", syncID, err)
-		}
-		document.Profiles[syncID] = profile
-	}
-	if err := profileRows.Close(); err != nil {
-		return document, err
-	}
-
-	skillRows, err := tx.Query(`SELECT sync_id, enabled, target_name, previous_target_names_json, tags_json, profile_json, updated_at, provider, source_id, clone_url, subpath, ref FROM skills`)
-	if err != nil {
-		return document, err
-	}
-	defer skillRows.Close()
-	for skillRows.Next() {
-		var syncID, previousNames, tags string
-		var profileJSON sql.NullString
-		var enabled int
-		var record SyncSkillRecord
-		if err := skillRows.Scan(&syncID, &enabled, &record.TargetName, &previousNames, &tags, &profileJSON, &record.UpdatedAt, &record.Source.Provider, &record.Source.ID, &record.Source.Locator.CloneURL, &record.Source.Locator.Subpath, &record.Source.Locator.Ref); err != nil {
-			return document, err
-		}
-		record.Enabled = enabled != 0
-		if err := json.Unmarshal([]byte(previousNames), &record.PreviousTargetNames); err != nil {
-			return document, fmt.Errorf("decode previous names for %q: %w", syncID, err)
-		}
-		if err := json.Unmarshal([]byte(tags), &record.Tags); err != nil {
-			return document, fmt.Errorf("decode tags for %q: %w", syncID, err)
-		}
-		if profileJSON.Valid {
-			var profile SkillProfile
-			if err := json.Unmarshal([]byte(profileJSON.String), &profile); err != nil {
-				return document, fmt.Errorf("decode skill profile for %q: %w", syncID, err)
-			}
-			record.Profile = &profile
-		}
-		document.Skills[syncID] = record
-	}
-	if err := skillRows.Err(); err != nil {
-		return document, err
-	}
-	if err := skillRows.Close(); err != nil {
-		return document, err
-	}
-	if err := tx.Commit(); err != nil {
-		return document, err
+	if document.Version != 2 {
+		return document, errors.New("unsupported sync document version; expected version 2")
 	}
 	return normalizeSyncDocument(document), nil
 }
 
 func (s *SyncStore) Save(document SyncDocument) error {
 	if s == nil || s.path == "" {
-		return errors.New("sync database is not configured")
+		return errors.New("sync file is not configured")
 	}
 	document = normalizeSyncDocument(document)
-	db, err := s.open()
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(document, "", "  ")
 	if err != nil {
 		return err
 	}
-	defer db.Close()
-	return withTransaction(db, func(tx *sql.Tx) error {
-		if _, err := tx.Exec(`DELETE FROM skills`); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM profiles`); err != nil {
-			return err
-		}
-		if err := saveLLMConfigTx(tx, document.LLM); err != nil {
-			return err
-		}
-		for syncID, profile := range document.Profiles {
-			if err := upsertProfileTx(tx, syncID, profile); err != nil {
-				return err
-			}
-		}
-		for _, record := range document.Skills {
-			if err := upsertSkillTx(tx, record); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	temp, err := os.CreateTemp(filepath.Dir(s.path), ".skill-manager-sync-*.tmp")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err := temp.Chmod(0o644); err != nil {
+		temp.Close()
+		return err
+	}
+	if _, err := temp.Write(data); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, s.path)
 }
 
 func (s *SyncStore) UpsertSkill(record SyncSkillRecord) error {
@@ -198,51 +134,39 @@ func (s *SyncStore) UpsertSkill(record SyncSkillRecord) error {
 }
 
 func (s *SyncStore) UpsertSkills(records []SyncSkillRecord) error {
-	if s == nil || s.path == "" {
-		return errors.New("sync database is not configured")
-	}
-	db, err := s.open()
+	document, err := s.Load()
 	if err != nil {
 		return err
 	}
-	defer db.Close()
 	updatedAt := time.Now().UTC().Format(time.RFC3339)
-	return withTransaction(db, func(tx *sql.Tx) error {
-		for _, record := range records {
-			record = normalizeSyncSkillRecord(record)
-			if syncRecordID(record) == "" {
-				return errors.New("sync skill source is incomplete")
-			}
-			record.UpdatedAt = updatedAt
-			if err := upsertSkillTx(tx, record); err != nil {
-				return err
-			}
+	for _, record := range records {
+		record = normalizeSyncSkillRecord(record)
+		id := syncRecordID(record)
+		if id == "" {
+			return errors.New("sync skill source is incomplete")
 		}
-		return nil
-	})
+		record.UpdatedAt = updatedAt
+		document.Skills[id] = record
+	}
+	return s.Save(document)
 }
 
 func (s *SyncStore) DeleteSkill(syncID string) error {
-	db, err := s.open()
+	document, err := s.Load()
 	if err != nil {
 		return err
 	}
-	defer db.Close()
-	return withTransaction(db, func(tx *sql.Tx) error {
-		_, err := tx.Exec(`DELETE FROM skills WHERE sync_id = ?`, syncID)
-		return err
-	})
+	delete(document.Skills, syncID)
+	return s.Save(document)
 }
 
 func (s *SyncStore) SaveLLMConfig(config SyncLLMConfig) error {
-	db, err := s.open()
+	document, err := s.Load()
 	if err != nil {
 		return err
 	}
-	defer db.Close()
-	return withTransaction(db, func(tx *sql.Tx) error {
-		return saveLLMConfigTx(tx, config)
-	})
+	document.LLM = normalizeSyncLLMConfig(config)
+	return s.Save(document)
 }
 
 func (s *SyncStore) UpsertSkillProfile(syncID string, profile SkillProfile) error {
@@ -250,190 +174,23 @@ func (s *SyncStore) UpsertSkillProfile(syncID string, profile SkillProfile) erro
 	if syncID == "" {
 		return errors.New("skill profile sync id is required")
 	}
-	db, err := s.open()
+	document, err := s.Load()
 	if err != nil {
 		return err
 	}
-	defer db.Close()
 	profilePointer := normalizeSkillProfile(&profile)
 	if profilePointer == nil {
 		return errors.New("skill profile is empty")
 	}
-	raw, err := json.Marshal(profilePointer)
-	if err != nil {
-		return err
+	if document.Profiles == nil {
+		document.Profiles = map[string]SkillProfile{}
 	}
-	return withTransaction(db, func(tx *sql.Tx) error {
-		if err := upsertProfileTx(tx, syncID, *profilePointer); err != nil {
-			return err
-		}
-		_, err := tx.Exec(`UPDATE skills SET profile_json = ? WHERE sync_id = ?`, string(raw), syncID)
-		return err
-	})
-}
-
-func withTransaction(db *sql.DB, operation func(*sql.Tx) error) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return err
+	document.Profiles[syncID] = *profilePointer
+	if record, ok := document.Skills[syncID]; ok {
+		record.Profile = profilePointer
+		document.Skills[syncID] = record
 	}
-	defer tx.Rollback()
-	if err := operation(tx); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
-func emptySyncDocument() SyncDocument {
-	return SyncDocument{Version: 2, Profiles: map[string]SkillProfile{}, Skills: map[string]SyncSkillRecord{}}
-}
-
-func (s *SyncStore) open() (*sql.DB, error) {
-	if s == nil || strings.TrimSpace(s.path) == "" {
-		return nil, errors.New("sync database is not configured")
-	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
-		return nil, err
-	}
-	_, statErr := os.Stat(s.path)
-	isNew := errors.Is(statErr, os.ErrNotExist)
-	if statErr != nil && !isNew {
-		return nil, statErr
-	}
-	db, err := sql.Open("sqlite", s.path)
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(`PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;`); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if isNew {
-		if err := s.initialize(db); err != nil {
-			db.Close()
-			_ = os.Remove(s.path)
-			return nil, err
-		}
-	}
-	return db, nil
-}
-
-const syncSchema = `
-CREATE TABLE IF NOT EXISTS schema_meta (version INTEGER NOT NULL);
-INSERT INTO schema_meta(version) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM schema_meta);
-CREATE TABLE IF NOT EXISTS llm_config (
-  id INTEGER PRIMARY KEY CHECK (id = 1), base_url TEXT NOT NULL, api_key TEXT NOT NULL,
-  model TEXT NOT NULL, temperature REAL NOT NULL, max_tokens INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS profiles (sync_id TEXT PRIMARY KEY, profile_json TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS skills (
-  sync_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL, target_name TEXT NOT NULL,
-  previous_target_names_json TEXT NOT NULL, tags_json TEXT NOT NULL, profile_json TEXT,
-  updated_at TEXT NOT NULL, provider TEXT NOT NULL, source_id TEXT NOT NULL,
-  clone_url TEXT NOT NULL, subpath TEXT NOT NULL, ref TEXT NOT NULL
-);`
-
-func (s *SyncStore) initialize(db *sql.DB) error {
-	if _, err := db.Exec(`PRAGMA journal_mode=DELETE`); err != nil {
-		return err
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if _, err := tx.Exec(syncSchema); err != nil {
-		return err
-	}
-
-	legacyPath := filepath.Join(filepath.Dir(s.path), LegacySyncFileName)
-	data, err := os.ReadFile(legacyPath)
-	if errors.Is(err, os.ErrNotExist) {
-		return tx.Commit()
-	}
-	if err != nil {
-		return err
-	}
-	document := emptySyncDocument()
-	if err := json.Unmarshal(data, &document); err != nil {
-		return fmt.Errorf("migrate legacy sync JSON: %w", err)
-	}
-	if document.Version != 2 {
-		return errors.New("cannot migrate legacy sync JSON: expected version 2")
-	}
-	document = normalizeSyncDocument(document)
-	if err := saveLLMConfigTx(tx, document.LLM); err != nil {
-		return err
-	}
-	for syncID, profile := range document.Profiles {
-		if err := upsertProfileTx(tx, syncID, profile); err != nil {
-			return err
-		}
-	}
-	for _, record := range document.Skills {
-		if err := upsertSkillTx(tx, record); err != nil {
-			return err
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	backupPath := legacyPath + LegacySyncBackupSuffix
-	if _, err := os.Stat(backupPath); errors.Is(err, os.ErrNotExist) {
-		if err := os.Rename(legacyPath, backupPath); err != nil {
-			return fmt.Errorf("archive migrated sync JSON: %w", err)
-		}
-	}
-	return nil
-}
-
-func saveLLMConfigTx(tx *sql.Tx, config SyncLLMConfig) error {
-	config = normalizeSyncLLMConfig(config)
-	_, err := tx.Exec(`INSERT INTO llm_config(id, base_url, api_key, model, temperature, max_tokens) VALUES(1, ?, ?, ?, ?, ?)
-ON CONFLICT(id) DO UPDATE SET base_url=excluded.base_url, api_key=excluded.api_key, model=excluded.model, temperature=excluded.temperature, max_tokens=excluded.max_tokens`,
-		config.BaseURL, config.APIKey, config.Model, config.Temperature, config.MaxTokens)
-	return err
-}
-
-func upsertProfileTx(tx *sql.Tx, syncID string, profile SkillProfile) error {
-	raw, err := json.Marshal(profile)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(`INSERT INTO profiles(sync_id, profile_json) VALUES(?, ?) ON CONFLICT(sync_id) DO UPDATE SET profile_json=excluded.profile_json`, syncID, string(raw))
-	return err
-}
-
-func upsertSkillTx(tx *sql.Tx, record SyncSkillRecord) error {
-	record = normalizeSyncSkillRecord(record)
-	syncID := syncRecordID(record)
-	if syncID == "" {
-		return errors.New("sync skill source is incomplete")
-	}
-	previousNames, err := json.Marshal(record.PreviousTargetNames)
-	if err != nil {
-		return err
-	}
-	tags, err := json.Marshal(record.Tags)
-	if err != nil {
-		return err
-	}
-	var profile any
-	if record.Profile != nil {
-		raw, err := json.Marshal(record.Profile)
-		if err != nil {
-			return err
-		}
-		profile = string(raw)
-	}
-	_, err = tx.Exec(`INSERT INTO skills(sync_id, enabled, target_name, previous_target_names_json, tags_json, profile_json, updated_at, provider, source_id, clone_url, subpath, ref)
-VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(sync_id) DO UPDATE SET enabled=excluded.enabled, target_name=excluded.target_name, previous_target_names_json=excluded.previous_target_names_json,
-tags_json=excluded.tags_json, profile_json=excluded.profile_json, updated_at=excluded.updated_at, provider=excluded.provider, source_id=excluded.source_id,
-clone_url=excluded.clone_url, subpath=excluded.subpath, ref=excluded.ref`, syncID, record.Enabled, record.TargetName, string(previousNames), string(tags), profile,
-		record.UpdatedAt, record.Source.Provider, record.Source.ID, record.Source.Locator.CloneURL, record.Source.Locator.Subpath, record.Source.Locator.Ref)
-	return err
+	return s.Save(document)
 }
 
 func normalizeSyncDocument(document SyncDocument) SyncDocument {

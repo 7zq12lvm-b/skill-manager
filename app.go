@@ -386,7 +386,7 @@ func (a *App) BrowseForTarget() (string, error) {
 
 func (a *App) BrowseForSyncFolder() (string, error) {
 	return wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
-		Title: "Choose Folder Containing Skill Manager Database",
+		Title: "Choose iCloud Sync Folder",
 	})
 }
 
