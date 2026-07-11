@@ -1312,7 +1312,7 @@ function SyncSetupScreen({
             <div className="min-w-0">
               <h2 className="text-lg font-semibold">Choose shared storage</h2>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Select the iCloud folder that will hold the shared skill catalog.
+                Select the iCloud folder containing the shared Skill Manager database. An existing database will be loaded automatically.
               </p>
             </div>
           </div>
@@ -1320,7 +1320,7 @@ function SyncSetupScreen({
             <Button
               onClick={() => void onChooseFolder()}
               disabled={loading}
-              title="Choose the required iCloud folder, then create or load the shared skill catalog there."
+              title="Choose the required iCloud folder, then create or load skill-manager-sync.db there."
             >
               <FolderPlus aria-hidden="true" className="h-4 w-4" />
               Choose folder
@@ -2644,10 +2644,10 @@ function SettingsModal({
           </div>
         </div>
         <div className="block text-sm font-medium">
-          iCloud sync folder
+          iCloud database folder
           <div className="mt-2 flex gap-2">
             <input
-              aria-label="iCloud sync folder"
+              aria-label="iCloud database folder"
               autoComplete="off"
               name="sync-folder"
               value={config.sync?.folder ?? ""}
@@ -2657,7 +2657,7 @@ function SettingsModal({
             />
             <Button
               variant="outline"
-              title="Open a folder picker and use the selected folder for iCloud sync."
+              title="Choose the folder containing skill-manager-sync.db, or a folder where it should be created."
               onClick={async () => {
                 const folder = await onBrowseSyncFolder();
                 if (folder) updateSync({ folder });
