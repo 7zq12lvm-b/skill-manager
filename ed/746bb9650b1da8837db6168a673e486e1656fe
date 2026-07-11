@@ -1,0 +1,35 @@
+internal/sync_store_test.go
+  s_f09d22e173b3b3::t_576fb688d3999b 86-121
+  s_f09d22e173b3b3::t_13b62e274cb2f6 4,9-84
+  s_f09d22e173b3b3::t_a526db4b700a04 85
+internal/sync_store.go
+  s_f09d22e173b3b3::t_4248c8a1f17ec1 4,7,13-14,17-21,81,85-87,89,95,97,101-120,122-150,157,164,167,171-172,176-177,180,183,186-194,196,204-212,216,220,224-226,228,232,236,249-254,258-262,270,274,279-281,283-328,330-435,437-443
+  s_f09d22e173b3b3::t_56a65a8bc57c64 90
+  s_f09d22e173b3b3::t_d3627c3fe3ac8c 329
+  s_f09d22e173b3b3::t_43248f8bce8f15 94,96,100,121,151-156,237-245
+frontend/src/App.tsx
+  s_f09d22e173b3b3::t_d3627c3fe3ac8c 1315,1323,2647,2650,2660
+app.go
+  s_f09d22e173b3b3::t_d3627c3fe3ac8c 389
+go.mod
+  s_f09d22e173b3b3::t_fdac6b0322d50c 9
+  s_f09d22e173b3b3::t_f4a15462470719 15,29,32,41,43,45-47
+go.sum
+  s_f09d22e173b3b3::t_f22409c88d6e94 7-8,15-16,47-48,57-58,80-83,87-88,95-96,102-103,109-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "ed746bb9650b1da8837db6168a673e486e1656fe",
+  "prompts": {},
+  "sessions": {
+    "s_f09d22e173b3b3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f5024-7028-7641-a7d4-bdc54d741c96",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
