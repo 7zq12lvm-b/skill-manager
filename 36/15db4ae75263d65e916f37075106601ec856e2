@@ -1,0 +1,71 @@
+internal/sync_store.go
+  s_fb768bf33d69de::t_51c97d8aab9841 39,241
+internal/sync_store_test.go
+  s_fb768bf33d69de::t_ee1af65b85edf2 4,6,97-126
+  s_fb768bf33d69de::t_073bcb304dd245 127
+internal/service_test.go
+  s_fb768bf33d69de::t_56277d10401f8b 745-748
+  s_fb768bf33d69de::t_ee1af65b85edf2 692,711-713,719-744
+  s_fb768bf33d69de::t_3aa082318342cc 705-707
+  s_fb768bf33d69de::t_ec47c8f24fd9b9 749-750
+app_test.go
+  s_fb768bf33d69de::t_1adfedcc5f9ec6 230-237,251-253,278-280
+  s_fb768bf33d69de::t_ee1af65b85edf2 157-229,238-250,254-277,281-301
+internal/service.go
+  s_fb768bf33d69de::t_38d17d956649ab 456
+  s_fb768bf33d69de::t_56277d10401f8b 534,538-540,560
+  s_fb768bf33d69de::t_51c97d8aab9841 537,563,583
+internal/types.go
+  s_fb768bf33d69de::t_56277d10401f8b 195
+  s_fb768bf33d69de::t_51c97d8aab9841 208
+frontend/wailsjs/go/main/App.d.ts
+  s_fb768bf33d69de::t_c710185170314f 53-54,73
+  s_fb768bf33d69de::t_ad5cf4c7531d12 74
+app.go
+  s_fb768bf33d69de::t_6671ce1952342f 1234-1243
+  s_fb768bf33d69de::t_51c97d8aab9841 792-837,839-853,905,1200,1252
+  s_fb768bf33d69de::t_1adfedcc5f9ec6 838,1233,1244-1251
+  s_fb768bf33d69de::t_38d17d956649ab 1081
+  s_fb768bf33d69de::t_f3e4e60b158940 1253
+frontend/wailsjs/go/main/App.js
+  s_fb768bf33d69de::t_c710185170314f 101-104,141-143
+  s_fb768bf33d69de::t_a431099e39bfd0 144
+frontend/wailsjs/go/models.ts
+  s_fb768bf33d69de::t_f1dd8c2f064b5d 161,205
+  s_fb768bf33d69de::t_c710185170314f 174,218
+frontend/src/App.tsx
+  s_fb768bf33d69de::t_d62e254bd48f2f 1096,2275-2349,2351-2354,2356-2361,2363-2469
+  s_fb768bf33d69de::t_ca2d326fc8218c 2350,2355,2362
+  s_fb768bf33d69de::t_647cdd198fd1c4 3200-3253,3264
+  s_fb768bf33d69de::t_f544448eddeb0e 1595,1635,1691-1693
+  s_fb768bf33d69de::t_ad4f7557a71906 372-375
+  s_fb768bf33d69de::t_59dfe114b5e990 754-760,821-822
+  s_fb768bf33d69de::t_60dec913abd8d6 1518
+  s_fb768bf33d69de::t_b6fa3f1a0946b6 25,65,75,77-83,88-92,139,142,158,172
+  s_fb768bf33d69de::t_24f6e62c13d782 863,880,888-895,907
+  s_fb768bf33d69de::t_00642512f35546 983-991,1087-1093,1095
+  s_fb768bf33d69de::t_c0859581a44aaf 823
+  s_fb768bf33d69de::t_4d535ad4a79cb5 1094
+  s_fb768bf33d69de::t_aa96994e7f5f83 1097
+  s_fb768bf33d69de::t_6170333cd48d22 1694
+frontend/src/store/useSkillStore.ts
+  s_fb768bf33d69de::t_b7fe99cb2c3cae 26,35,76,79,335-344,366-377
+frontend/src/App.css
+  s_fb768bf33d69de::t_7f572ac153b0f8 389-414
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "3615db4ae75263d65e916f37075106601ec856e2",
+  "prompts": {},
+  "sessions": {
+    "s_fb768bf33d69de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f45b7-c5a9-7e50-9541-5735c936dda3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
