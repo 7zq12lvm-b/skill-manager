@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-07-11-skill-personal-notes-design.md
+  s_fb768bf33d69de::t_98f77724dc8b98 13,34,58,60,62-63,68-69,86-87,95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "f4ff83b4f7f3daddf0e13470d86c21a53ad5fb28",
+  "prompts": {},
+  "sessions": {
+    "s_fb768bf33d69de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f45b7-c5a9-7e50-9541-5735c936dda3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
