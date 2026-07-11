@@ -22,6 +22,7 @@ import {
   Settings,
   SlidersHorizontal,
   SquareTerminal,
+  StickyNote,
   Tag,
   Trash2,
   X,
@@ -39,7 +40,6 @@ const statusLabels: Record<string, string> = {
   conflict: "Conflict",
   invalid: "Invalid",
   "missing-source": "Missing Source",
-  "missing-path": "Missing Path",
   error: "Error",
 };
 
@@ -50,7 +50,6 @@ const statusClass: Record<string, string> = {
   invalid: "status-pill--invalid",
   error: "status-pill--invalid",
   "missing-source": "status-pill--missing",
-  "missing-path": "status-pill--missing",
 };
 
 const SOURCE_WIDTH_KEY = "skill-manager:source-panel-width";
@@ -63,7 +62,7 @@ const MIN_DETAIL_WIDTH = 220;
 const MAX_DETAIL_WIDTH = 560;
 const RESIZE_HANDLE_WIDTH = 8;
 const SKILLS_COLUMNS_KEY = "skill-manager:skills-column-widths";
-const skillColumnKeys = ["selection", "enabled", "skill", "tags", "source", "status"] as const;
+const skillColumnKeys = ["selection", "enabled", "skill", "tags", "note", "source", "status"] as const;
 type SkillColumnKey = (typeof skillColumnKeys)[number];
 type SkillColumnWidths = Record<SkillColumnKey, number>;
 type RepositoryPanelItem = skillmgr.Repository;
@@ -73,21 +72,24 @@ type CompactView = "skills" | "detail";
 type TagPickerState =
   | { mode: "single"; skillId: string; anchor: DOMRect }
   | { mode: "bulk"; anchor: DOMRect };
+type NoteEditorState = { skillId: string; anchor: DOMRect };
 const DEFAULT_SKILL_COLUMN_WIDTHS: SkillColumnWidths = {
-  selection: 7,
-  enabled: 10,
-  skill: 29,
-  tags: 24,
-  source: 15,
-  status: 15,
+  selection: 6,
+  enabled: 8,
+  skill: 24,
+  tags: 17,
+  note: 19,
+  source: 14,
+  status: 12,
 };
 const MIN_SKILL_COLUMN_WIDTHS: SkillColumnWidths = {
   selection: 6,
   enabled: 8,
-  skill: 22,
-  tags: 14,
-  source: 12,
-  status: 12,
+  skill: 18,
+  tags: 12,
+  note: 12,
+  source: 10,
+  status: 10,
 };
 const TAG_TONES = [
   { backgroundColor: "#e5f6ee", borderColor: "#9ad9bf", color: "#126747" },
@@ -134,8 +136,10 @@ function App() {
     generateSkillProfile,
     readSkillEnv,
     saveSkillEnv,
+    saveSkillNote,
     saveSkillTags,
     addSkillTags,
+    removeMissingSkill,
     listSkillFiles,
     readSkillFilePreview,
     openInTerminal,
@@ -151,6 +155,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sourceToEdit, setSourceToEdit] = useState<RepositoryPanelItem>();
   const [sourceToRemove, setSourceToRemove] = useState<RepositoryPanelItem>();
+  const [missingSkillToRemove, setMissingSkillToRemove] = useState<skillmgr.Skill>();
   const [cloneDraft, setCloneDraft] = useState<CloneDraft>();
   const [sourcePath, setSourcePath] = useState("");
   const [sourcePanelWidth, setSourcePanelWidth] = useState(() =>
@@ -164,6 +169,7 @@ function App() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(() => new Set());
   const [tagPicker, setTagPicker] = useState<TagPickerState>();
+  const [noteEditor, setNoteEditor] = useState<NoteEditorState>();
   const workbenchLayout = useWorkbenchLayout();
   const [repositoryDrawerOpen, setRepositoryDrawerOpen] = useState(false);
   const [compactView, setCompactView] = useState<CompactView>("skills");
@@ -361,6 +367,10 @@ function App() {
 
   function openBulkTagPicker(anchor: HTMLElement) {
     setTagPicker({ mode: "bulk", anchor: anchor.getBoundingClientRect() });
+  }
+
+  function openNoteEditor(skillId: string, anchor: HTMLElement) {
+    setNoteEditor({ skillId, anchor: anchor.getBoundingClientRect() });
   }
 
   async function addSingleSkillTag(skillId: string, tag: string) {
@@ -741,8 +751,13 @@ function App() {
                   />
                   <SkillHeaderCell
                     label="Tags"
-                    onKeyResize={(event) => resizeSkillColumnByKeyboard("tags", "source", event)}
-                    onResize={(event) => startSkillColumnResize("tags", "source", event)}
+                    onKeyResize={(event) => resizeSkillColumnByKeyboard("tags", "note", event)}
+                    onResize={(event) => startSkillColumnResize("tags", "note", event)}
+                  />
+                  <SkillHeaderCell
+                    label="Note"
+                    onKeyResize={(event) => resizeSkillColumnByKeyboard("note", "source", event)}
+                    onResize={(event) => startSkillColumnResize("note", "source", event)}
                   />
                   <SkillHeaderCell
                     label="Source"
@@ -803,6 +818,9 @@ function App() {
                         onOpenPicker={(anchor) => openSingleTagPicker(skill.id, anchor)}
                       />
                     </td>
+                    <td className="min-w-0 overflow-hidden px-3 py-2">
+                      <SkillNoteCell skill={skill} onOpenEditor={(anchor) => openNoteEditor(skill.id, anchor)} />
+                    </td>
                     <td className="min-w-0 overflow-hidden px-3 py-2 text-muted-foreground">
                       <div className="truncate">{skill.sourceAlias || skill.repoId || skill.sourceId}</div>
                       {skill.repoSubpath && <div className="truncate text-xs">{skill.repoSubpath}</div>}
@@ -842,8 +860,7 @@ function App() {
             <div className="flex items-center gap-2">
               {selectedSkill &&
                 selectedSkill.sourcePath &&
-                selectedSkill.status !== "missing-source" &&
-                selectedSkill.status !== "missing-path" && (
+                selectedSkill.status !== "missing-source" && (
                   <IconButton
                     title="Open this skill's original source folder in Finder."
                     onClick={() => openPath(selectedSkill.sourcePath)}
@@ -860,8 +877,7 @@ function App() {
               </IconButton>
               {selectedSkill &&
                 selectedSkill.sourcePath &&
-                selectedSkill.status !== "missing-source" &&
-                selectedSkill.status !== "missing-path" && (
+                selectedSkill.status !== "missing-source" && (
                   <IconButton
                     title="Open Terminal.app with this skill's original source directory as the working directory."
                     onClick={() => openInTerminal(selectedSkill.sourcePath)}
@@ -869,6 +885,14 @@ function App() {
                     <SquareTerminal aria-hidden="true" className="h-4 w-4" />
                   </IconButton>
                 )}
+              {selectedSkill?.status === "missing-source" && selectedSkill.canRemove && (
+                <IconButton
+                  title="Remove this unavailable skill from the shared catalog on every synced device without deleting repository files."
+                  onClick={() => setMissingSkillToRemove(selectedSkill)}
+                >
+                  <Trash2 aria-hidden="true" className="h-4 w-4" />
+                </IconButton>
+              )}
             </div>
           </PanelHeader>
           <SkillDetail
@@ -880,6 +904,7 @@ function App() {
             onGenerateProfile={generateProfile}
             onReadEnv={readSkillEnv}
             onSaveEnv={saveSkillEnv}
+            onSaveNote={saveSkillNote}
             onSaveTags={saveSkillTags}
             onListFiles={listSkillFiles}
             onReadFilePreview={readSkillFilePreview}
@@ -952,6 +977,15 @@ function App() {
             tagPicker.mode === "single" ? addSingleSkillTag(tagPicker.skillId, tag) : Promise.resolve()
           }
           onBulkSubmit={addTagsToSelectedSkills}
+        />
+      )}
+
+      {noteEditor && (
+        <NoteEditorPopover
+          anchor={noteEditor.anchor}
+          skill={inventory?.skills?.find((skill) => skill.id === noteEditor.skillId)}
+          onClose={() => setNoteEditor(undefined)}
+          onSave={saveSkillNote}
         />
       )}
 
@@ -1046,6 +1080,17 @@ function App() {
           onRemove={async () => {
             await removeSource(sourceToRemove.repoId);
             setSourceToRemove(undefined);
+          }}
+        />
+      )}
+
+      {missingSkillToRemove && (
+        <RemoveMissingSkillModal
+          skill={missingSkillToRemove}
+          onClose={() => setMissingSkillToRemove(undefined)}
+          onRemove={async () => {
+            await removeMissingSkill(missingSkillToRemove.id);
+            setMissingSkillToRemove(undefined);
           }}
         />
       )}
@@ -1470,7 +1515,7 @@ function SkillSwitch({
   onDisable: () => void;
 }) {
   const checked = isActiveSkill(skill);
-  const disabled = ["invalid", "error", "missing-source", "missing-path"].includes(skill.status);
+  const disabled = ["invalid", "error", "missing-source"].includes(skill.status);
   const switchTitle = disabled
     ? "This skill cannot be enabled until its source or validation issues are fixed."
     : checked
@@ -1547,6 +1592,7 @@ type SkillDetailProps = {
   onGenerateProfile: (skillId: string, force?: boolean) => Promise<void>;
   onReadEnv: (skillId: string) => Promise<string>;
   onSaveEnv: (skillId: string, content: string) => Promise<void>;
+  onSaveNote: (skillId: string, note: string) => Promise<void>;
   onSaveTags: (skillId: string, tags: string[]) => Promise<void>;
   onListFiles: (skillId: string, relativeDir: string) => Promise<skillmgr.SkillFileEntry[]>;
   onReadFilePreview: (skillId: string, relativeFile: string) => Promise<skillmgr.SkillFilePreview>;
@@ -1586,6 +1632,7 @@ function SkillDetailContent({
   onGenerateProfile,
   onReadEnv,
   onSaveEnv,
+  onSaveNote,
   onSaveTags,
   onListFiles,
   onReadFilePreview,
@@ -1640,6 +1687,10 @@ function SkillDetailContent({
           <StatusPill status={skill.status} />
         </div>
       </div>
+
+      <DetailSection title="Personal Note">
+        <PersonalNoteEditor skill={skill} onSave={onSaveNote} />
+      </DetailSection>
 
       <DetailSection title="Paths">
         {skill.sourcePath ? (
@@ -2218,6 +2269,201 @@ function SkillTagsCell({
         </button>
       }
     />
+  );
+}
+
+function SkillNoteCell({
+  skill,
+  onOpenEditor,
+}: {
+  skill: skillmgr.Skill;
+  onOpenEditor: (anchor: HTMLElement) => void;
+}) {
+  const note = skill.note?.trim() ?? "";
+  return (
+    <button
+      aria-label={`${note ? "Edit" : "Add"} personal note for ${skill.displayName || skill.name}`}
+      className={cn(
+        "skill-note-cell flex min-h-7 w-full min-w-0 items-center text-left text-xs",
+        note ? "text-slate-700" : "justify-center text-slate-500",
+      )}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpenEditor(event.currentTarget);
+      }}
+      onKeyDown={(event) => event.stopPropagation()}
+      title={
+        note
+          ? "Edit this personal note; changes sync to your other Skill Manager devices."
+          : "Add a multiline personal note that syncs with this skill across your devices."
+      }
+      type="button"
+    >
+      {note ? (
+        <span className="skill-note-preview min-w-0">{note}</span>
+      ) : (
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-dashed border-slate-300 bg-white">
+          <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+        </span>
+      )}
+    </button>
+  );
+}
+
+function NoteEditorPopover({
+  anchor,
+  skill,
+  onClose,
+  onSave,
+}: {
+  anchor: DOMRect;
+  skill?: skillmgr.Skill;
+  onClose: () => void;
+  onSave: (skillId: string, note: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(skill?.note ?? "");
+  const [saving, setSaving] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const savingRef = useRef(false);
+  const width = Math.min(340, window.innerWidth - 24);
+  const estimatedHeight = 150;
+  const left = Math.max(12, Math.min(anchor.left, window.innerWidth - width - 12));
+  const top =
+    anchor.bottom + estimatedHeight <= window.innerHeight - 12
+      ? anchor.bottom + 6
+      : Math.max(12, anchor.top - estimatedHeight - 6);
+
+  useEffect(() => {
+    textareaRef.current?.focus();
+    function closeOnViewportChange() {
+      onClose();
+    }
+    window.addEventListener("resize", closeOnViewportChange);
+    window.addEventListener("scroll", closeOnViewportChange, true);
+    return () => {
+      window.removeEventListener("resize", closeOnViewportChange);
+      window.removeEventListener("scroll", closeOnViewportChange, true);
+    };
+  }, [onClose]);
+
+  if (!skill) return null;
+  const activeSkill = skill;
+
+  async function saveAndClose() {
+    if (savingRef.current) return;
+    const normalizedDraft = draft.trim();
+    if (normalizedDraft === (activeSkill.note ?? "").trim()) {
+      onClose();
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await onSave(activeSkill.id, draft);
+      onClose();
+    } catch {
+      savingRef.current = false;
+      setSaving(false);
+      window.requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+  }
+
+  return createPortal(
+    <div
+      aria-label={`Edit personal note for ${skill.displayName || skill.name}`}
+      className="note-editor-popover fixed z-[80] rounded-md border border-border bg-white p-2 shadow-xl"
+      role="dialog"
+      style={{ left, top, width }}
+    >
+      <textarea
+        ref={textareaRef}
+        aria-label="Personal note"
+        className="min-h-28 w-full resize-y rounded-md border border-input bg-white px-3 py-2 text-sm leading-5 outline-none focus:border-[var(--sm-link)]"
+        disabled={saving}
+        onBlur={() => void saveAndClose()}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onClose();
+          } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            void saveAndClose();
+          }
+        }}
+        placeholder="Add a personal note..."
+        value={draft}
+      />
+    </div>,
+    document.body,
+  );
+}
+
+function PersonalNoteEditor({
+  skill,
+  onSave,
+}: {
+  skill: skillmgr.Skill;
+  onSave: (skillId: string, note: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(skill.note ?? "");
+  const [saving, setSaving] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const savingRef = useRef(false);
+  const cancelBlurRef = useRef(false);
+
+  useEffect(() => {
+    setDraft(skill.note ?? "");
+    setSaving(false);
+    savingRef.current = false;
+  }, [skill.id, skill.note]);
+
+  async function save() {
+    if (cancelBlurRef.current) {
+      cancelBlurRef.current = false;
+      return;
+    }
+    if (savingRef.current) return;
+    const normalizedDraft = draft.trim();
+    if (normalizedDraft === (skill.note ?? "").trim()) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await onSave(skill.id, draft);
+      setDraft(normalizedDraft);
+    } catch {
+      window.requestAnimationFrame(() => textareaRef.current?.focus());
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <StickyNote aria-hidden="true" className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-[var(--sm-link)]" />
+      <textarea
+        ref={textareaRef}
+        aria-label={`Personal note for ${skill.displayName || skill.name}`}
+        className="min-h-24 w-full resize-y rounded-md border border-input bg-slate-50 py-2 pl-10 pr-3 text-sm leading-5 outline-none focus:border-[var(--sm-link)] focus:bg-white"
+        disabled={saving}
+        onBlur={() => void save()}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            cancelBlurRef.current = true;
+            setDraft(skill.note ?? "");
+            event.currentTarget.blur();
+          } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
+        placeholder="Add a personal note..."
+        value={draft}
+      />
+    </div>
   );
 }
 
@@ -2951,6 +3197,60 @@ function RemoveSourceModal({
   );
 }
 
+function RemoveMissingSkillModal({
+  skill,
+  onClose,
+  onRemove,
+}: {
+  skill: skillmgr.Skill;
+  onClose: () => void;
+  onRemove: () => Promise<void>;
+}) {
+  const [removing, setRemoving] = useState(false);
+
+  async function remove() {
+    setRemoving(true);
+    try {
+      await onRemove();
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  return (
+    <Modal title="Remove Missing Skill" onClose={onClose}>
+      <div className="space-y-4">
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          This removes the missing skill from the shared catalog and every synced device. Repository files are not deleted.
+        </div>
+        <div>
+          <div className="text-sm font-medium">{skill.displayName || skill.name}</div>
+          <div className="mt-1 break-all font-mono text-xs text-muted-foreground">
+            {skill.repoSubpath || skill.sourcePath || skill.syncId}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            onClick={onClose}
+            disabled={removing}
+            title="Close this dialog and keep the missing skill in the shared catalog."
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={remove}
+            disabled={removing}
+            title="Remove this unavailable skill record and its matching managed links from every synced device."
+          >
+            {removing ? "Removing…" : "Remove Skill"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function StatusPill({ status }: { status: string }) {
   return (
     <span
@@ -2961,7 +3261,7 @@ function StatusPill({ status }: { status: string }) {
     >
       {status === "enabled" && <Check aria-hidden="true" className="h-3 w-3" />}
       {status === "conflict" && <AlertTriangle aria-hidden="true" className="h-3 w-3" />}
-      {(status === "missing-source" || status === "missing-path") && <AlertTriangle aria-hidden="true" className="h-3 w-3" />}
+      {status === "missing-source" && <AlertTriangle aria-hidden="true" className="h-3 w-3" />}
       {statusLabels[status] ?? status}
     </span>
   );

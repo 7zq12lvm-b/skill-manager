@@ -386,6 +386,32 @@
   box-shadow: var(--sm-shadow);
 }
 
+.skill-note-cell {
+  border-radius: 0.35rem;
+}
+
+.skill-note-cell:hover {
+  color: var(--sm-link-dark);
+}
+
+.skill-note-cell:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--sm-link), white 15%);
+  outline-offset: 2px;
+}
+
+.skill-note-preview {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.15rem;
+}
+
+.note-editor-popover {
+  box-shadow: var(--sm-shadow);
+}
+
 .tag-picker-option:focus-visible,
 .tag-add-button:focus-visible,
 .skill-select-checkbox:focus-visible {

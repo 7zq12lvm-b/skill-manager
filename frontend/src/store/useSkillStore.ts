@@ -23,6 +23,7 @@ import {
   PullSource,
   ReadSkillEnvFile,
   ReadSkillFilePreview,
+  RemoveMissingSkill,
   RemoveSource,
   RenameRepository,
   RenameSource,
@@ -31,6 +32,7 @@ import {
   SaveConfig,
   SaveLLMConfig,
   SaveSkillEnvFile,
+  SaveSkillNote,
   SaveSkillTags,
   UseExistingRepository,
 } from "../../wailsjs/go/main/App";
@@ -71,8 +73,10 @@ type SkillStore = {
   generateSkillProfile: (skillId: string, force?: boolean) => Promise<void>;
   readSkillEnv: (skillId: string) => Promise<string>;
   saveSkillEnv: (skillId: string, content: string) => Promise<void>;
+  saveSkillNote: (skillId: string, note: string) => Promise<void>;
   saveSkillTags: (skillId: string, tags: string[]) => Promise<void>;
   addSkillTags: (skillIds: string[], tags: string[]) => Promise<void>;
+  removeMissingSkill: (skillId: string) => Promise<void>;
   listSkillFiles: (skillId: string, relativeDir: string) => Promise<skillmgr.SkillFileEntry[]>;
   readSkillFilePreview: (skillId: string, relativeFile: string) => Promise<skillmgr.SkillFilePreview>;
   openInTerminal: (path: string) => Promise<void>;
@@ -328,6 +332,16 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
       throw error;
     }
   },
+  saveSkillNote: async (skillId, note) => {
+    set({ error: undefined });
+    try {
+      const inventory = await SaveSkillNote(skillId, note);
+      get().setInventory(inventory);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+  },
   saveSkillTags: async (skillId, tags) =>
     runWithInventory(set, () => SaveSkillTags(skillId, tags), "Saving tags..."),
   addSkillTags: async (skillIds, tags) => {
@@ -347,6 +361,18 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
       });
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
+    }
+  },
+  removeMissingSkill: async (skillId) => {
+    set({ loading: true, loadingLabel: "Removing missing skill...", error: undefined });
+    await waitForPaint();
+    try {
+      const inventory = await RemoveMissingSkill(skillId);
+      get().setInventory(inventory);
+      set({ loading: false, loadingLabel: undefined });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
+      throw error;
     }
   },
   listSkillFiles: async (skillId, relativeDir) => {

@@ -98,6 +98,10 @@ export function ReadSkillFilePreview(arg1, arg2) {
   return window['go']['main']['App']['ReadSkillFilePreview'](arg1, arg2);
 }
 
+export function RemoveMissingSkill(arg1) {
+  return window['go']['main']['App']['RemoveMissingSkill'](arg1);
+}
+
 export function RemoveRepository(arg1) {
   return window['go']['main']['App']['RemoveRepository'](arg1);
 }
@@ -132,6 +136,10 @@ export function SaveLLMConfig(arg1) {
 
 export function SaveSkillEnvFile(arg1, arg2) {
   return window['go']['main']['App']['SaveSkillEnvFile'](arg1, arg2);
+}
+
+export function SaveSkillNote(arg1, arg2) {
+  return window['go']['main']['App']['SaveSkillNote'](arg1, arg2);
 }
 
 export function SaveSkillTags(arg1, arg2) {

@@ -689,6 +689,7 @@ func TestScanWithSyncShowsMissingSource(t *testing.T) {
 		"git:example.com/me/repo//skills/code-review": {
 			Enabled:    true,
 			TargetName: "code-review",
+			Note:       "Review risky changes first.",
 			Source:     SyncSource{Provider: GitProvider, ID: "example.com/me/repo", Locator: SourceLocator{Subpath: "skills/code-review"}},
 		},
 	}})
@@ -701,11 +702,49 @@ func TestScanWithSyncShowsMissingSource(t *testing.T) {
 	if inventory.Skills[0].Status != StatusMissingSource {
 		t.Fatalf("expected missing source, got %s", inventory.Skills[0].Status)
 	}
+	if inventory.Skills[0].CanRemove {
+		t.Fatal("expected a skill in an unavailable repository to require repository recovery")
+	}
 	if inventory.Skills[0].DesiredEnabled == nil || *inventory.Skills[0].DesiredEnabled != enabled {
 		t.Fatalf("expected desired enabled true, got %#v", inventory.Skills[0].DesiredEnabled)
 	}
+	if inventory.Skills[0].Note != "Review risky changes first." {
+		t.Fatalf("expected note on missing skill, got %q", inventory.Skills[0].Note)
+	}
 	if len(inventory.Repositories) != 1 || inventory.Repositories[0].Installed || inventory.Repositories[0].RepoID != "example.com/me/repo" {
 		t.Fatalf("expected shared repository to remain visible as missing, got %#v", inventory.Repositories)
+	}
+}
+
+func TestScanWithSyncUsesMissingSourceWhenRepositoryExistsButSkillDoesNot(t *testing.T) {
+	root := t.TempDir()
+	repositoryPath := filepath.Join(root, "repo")
+	mustMkdir(t, repositoryPath)
+	inventory, err := NewService().ScanWithSync(context.Background(), Config{
+		TargetDirs: []string{filepath.Join(root, "target")},
+		Repositories: []RepositoryConfig{{
+			ID:      "example.com/me/repo",
+			RepoID:  "example.com/me/repo",
+			Path:    repositoryPath,
+			Enabled: true,
+		}},
+	}, SyncDocument{Version: 2, Skills: map[string]SyncSkillRecord{
+		"git:example.com/me/repo//skills/missing": {
+			TargetName: "missing",
+			Source:     SyncSource{Provider: GitProvider, ID: "example.com/me/repo", Locator: SourceLocator{Subpath: "skills/missing"}},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory.Skills) != 1 || inventory.Skills[0].Status != StatusMissingSource {
+		t.Fatalf("expected missing source for absent skill path, got %#v", inventory.Skills)
+	}
+	if inventory.Skills[0].SourcePath != filepath.Join(repositoryPath, "skills", "missing") {
+		t.Fatalf("expected projected missing path, got %q", inventory.Skills[0].SourcePath)
+	}
+	if !inventory.Skills[0].CanRemove {
+		t.Fatal("expected missing skill in an installed repository to be removable")
 	}
 }
 

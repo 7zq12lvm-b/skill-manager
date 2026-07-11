@@ -453,7 +453,7 @@ func deriveStatuses(skills []Skill, targetDirs []string) {
 				skill.Error = targetError
 			} else if len(skill.ValidationErrors) > 0 {
 				skill.Status = StatusInvalid
-			} else if skill.Status == StatusMissingSource || skill.Status == StatusMissingPath {
+			} else if skill.Status == StatusMissingSource {
 				continue
 			} else if legacyDuplicate {
 				skill.Status = StatusConflict
@@ -531,10 +531,13 @@ func applySyncDocument(skills *[]Skill, config Config, document SyncDocument, sc
 		sourcePath := ""
 		status := StatusMissingSource
 		errorMessage := "repository is not configured on this machine"
+		canRemove := false
 		if hasRepository {
 			sourcePath = filepath.Join(repository.Path, filepath.FromSlash(record.Source.Locator.Subpath))
-			status = StatusMissingPath
-			errorMessage = "SKILL.md was not found at the synced repository path"
+			errorMessage = "skill source was not found at the synced repository path"
+			if info, err := os.Stat(repository.Path); err == nil && info.IsDir() {
+				canRemove = true
+			}
 		}
 		skill := Skill{
 			ID:                  id,
@@ -554,8 +557,10 @@ func applySyncDocument(skills *[]Skill, config Config, document SyncDocument, sc
 			IsSynced:            true,
 			DesiredEnabled:      &desired,
 			CanSync:             true,
+			CanRemove:           canRemove,
 			Ref:                 record.Source.Locator.Ref,
 			Tags:                append([]string(nil), record.Tags...),
+			Note:                record.Note,
 			Profile:             cloneSkillProfile(record.Profile),
 			Error:               errorMessage,
 			LastScannedAt:       scannedAt,
@@ -575,6 +580,7 @@ func applySyncRecordToSkill(skill *Skill, syncID string, record SyncSkillRecord,
 	skill.Name = record.TargetName
 	skill.PreviousTargetNames = append([]string(nil), record.PreviousTargetNames...)
 	skill.Tags = append([]string(nil), record.Tags...)
+	skill.Note = record.Note
 	skill.Profile = cloneSkillProfile(record.Profile)
 	skill.RefMismatch = record.Source.Locator.Ref != "" && currentRef != "" && currentRef != record.Source.Locator.Ref
 	skill.Ref = record.Source.Locator.Ref

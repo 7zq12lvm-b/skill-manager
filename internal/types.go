@@ -16,7 +16,6 @@ const (
 	StatusConflict      SkillStatus = "conflict"
 	StatusInvalid       SkillStatus = "invalid"
 	StatusMissingSource SkillStatus = "missing-source"
-	StatusMissingPath   SkillStatus = "missing-path"
 	StatusError         SkillStatus = "error"
 )
 
@@ -193,6 +192,7 @@ type Skill struct {
 	IsSynced            bool             `json:"-"`
 	DesiredEnabled      *bool            `json:"-"`
 	CanSync             bool             `json:"-"`
+	CanRemove           bool             `json:"canRemove"`
 	Ref                 string           `json:"ref,omitempty"`
 	RefMismatch         bool             `json:"refMismatch"`
 	ValidationErrors    []string         `json:"validationErrors,omitempty"`
@@ -205,6 +205,7 @@ type Skill struct {
 	LastScannedAt       string           `json:"lastScannedAt,omitempty"`
 	ConflictSources     []ConflictSource `json:"conflictSources,omitempty"`
 	Tags                []string         `json:"tags,omitempty"`
+	Note                string           `json:"note,omitempty"`
 	Profile             *SkillProfile    `json:"profile,omitempty"`
 	Error               string           `json:"error,omitempty"`
 }

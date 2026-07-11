@@ -154,6 +154,151 @@ func TestBulkTagAdditionAndDisableSelectedSkills(t *testing.T) {
 	}
 }
 
+func TestSaveSkillNotePreservesSharedRecord(t *testing.T) {
+	root := t.TempDir()
+	syncFolder := filepath.Join(root, "sync")
+	enabled := true
+	skill := skillmgr.Skill{
+		ID:             "git:example.com/me/repo//skills/review",
+		SyncID:         "git:example.com/me/repo//skills/review",
+		Name:           "review",
+		TargetName:     "review",
+		RepoID:         "example.com/me/repo",
+		RepoSubpath:    "skills/review",
+		IsSynced:       true,
+		DesiredEnabled: &enabled,
+		Tags:           []string{"existing"},
+	}
+	app := &App{
+		ctx:     context.Background(),
+		store:   skillmgr.NewConfigStore(filepath.Join(root, "config.json")),
+		service: skillmgr.NewService(),
+		config: skillmgr.Config{
+			TargetDirs: []string{filepath.Join(root, "target")},
+			Sync:       skillmgr.SyncConfig{Folder: syncFolder},
+		},
+		inventory: skillmgr.Inventory{Skills: []skillmgr.Skill{skill}},
+	}
+	store := skillmgr.NewSyncStore(skillmgr.SyncPathFromFolder(syncFolder))
+	if err := store.UpsertSkill(skillmgr.SyncSkillRecord{
+		Enabled:    true,
+		TargetName: "review",
+		Tags:       []string{"existing"},
+		Source:     skillmgr.SyncSource{Provider: skillmgr.GitProvider, ID: skill.RepoID, Locator: skillmgr.SourceLocator{Subpath: skill.RepoSubpath}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.SaveSkillNote(skill.ID, "  first line\nsecond line  "); err != nil {
+		t.Fatal(err)
+	}
+	document, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := document.Skills[skill.SyncID]
+	if record.Note != "first line\nsecond line" || !record.Enabled || len(record.Tags) != 1 || record.Tags[0] != "existing" {
+		t.Fatalf("unexpected saved note record: %#v", record)
+	}
+}
+
+func TestRemoveMissingSkillRequiresInstalledRepositoryAndCleansManagedLink(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	root := t.TempDir()
+	repositoryPath := filepath.Join(root, "repo")
+	runAppGit(t, root, "init", repositoryPath)
+	runAppGit(t, repositoryPath, "config", "user.email", "test@example.com")
+	runAppGit(t, repositoryPath, "config", "user.name", "Test")
+	runAppGit(t, repositoryPath, "remote", "add", "origin", "https://github.com/example/shared-skills.git")
+	if err := os.WriteFile(filepath.Join(repositoryPath, "README.md"), []byte("skills\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runAppGit(t, repositoryPath, "add", ".")
+	runAppGit(t, repositoryPath, "commit", "-m", "initial")
+
+	syncFolder := filepath.Join(root, "sync")
+	targetDir := filepath.Join(root, "target")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	missingPath := filepath.Join(repositoryPath, "skills", "removed")
+	managedLink := filepath.Join(targetDir, "removed")
+	if err := os.Symlink(missingPath, managedLink); err != nil {
+		t.Fatal(err)
+	}
+	unrelatedPath := filepath.Join(root, "unrelated")
+	if err := os.MkdirAll(unrelatedPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unrelatedLink := filepath.Join(targetDir, "old-removed")
+	if err := os.Symlink(unrelatedPath, unrelatedLink); err != nil {
+		t.Fatal(err)
+	}
+	syncID := "git:github.com/example/shared-skills//skills/removed"
+	config := skillmgr.DefaultConfig()
+	config.Scan.WatchSourceFolders = false
+	config.TargetDirs = []string{targetDir}
+	config.Sync.Folder = syncFolder
+	config.Repositories = []skillmgr.RepositoryConfig{{
+		ID:      "github.com/example/shared-skills",
+		RepoID:  "github.com/example/shared-skills",
+		Path:    repositoryPath,
+		Enabled: true,
+	}}
+	store := skillmgr.NewSyncStore(skillmgr.SyncPathFromFolder(syncFolder))
+	if err := store.UpsertSkill(skillmgr.SyncSkillRecord{
+		Enabled:             true,
+		TargetName:          "removed",
+		PreviousTargetNames: []string{"old-removed"},
+		Source: skillmgr.SyncSource{Provider: skillmgr.GitProvider, ID: "github.com/example/shared-skills", Locator: skillmgr.SourceLocator{
+			CloneURL: "https://github.com/example/shared-skills.git",
+			Subpath:  "skills/removed",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{
+		ctx:     context.Background(),
+		store:   skillmgr.NewConfigStore(filepath.Join(root, "config.json")),
+		service: skillmgr.NewService(),
+		config:  config,
+	}
+	if err := app.refreshLocked(app.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(app.inventory.Skills) != 1 || app.inventory.Skills[0].Status != skillmgr.StatusMissingSource {
+		t.Fatalf("expected missing source before removal, got %#v", app.inventory.Skills)
+	}
+	if _, err := app.RemoveMissingSkill(syncID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(managedLink); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected managed dangling link to be removed, got %v", err)
+	}
+	if target, err := os.Readlink(unrelatedLink); err != nil || target != unrelatedPath {
+		t.Fatalf("expected unrelated link to remain untouched, target=%q err=%v", target, err)
+	}
+	document, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := document.Skills[syncID]; exists {
+		t.Fatalf("expected missing skill record to be removed, got %#v", document.Skills[syncID])
+	}
+
+	app.inventory = skillmgr.Inventory{Skills: []skillmgr.Skill{{
+		ID:       syncID,
+		SyncID:   syncID,
+		RepoID:   "github.com/example/missing-repo",
+		IsSynced: true,
+		Status:   skillmgr.StatusMissingSource,
+	}}}
+	if _, err := app.RemoveMissingSkill(syncID); err == nil || !strings.Contains(err.Error(), "repository checkout is unavailable") {
+		t.Fatalf("expected unavailable repository removal to be rejected, got %v", err)
+	}
+}
+
 func TestValidateTerminalDirectory(t *testing.T) {
 	root := t.TempDir()
 	filePath := filepath.Join(root, "file.txt")

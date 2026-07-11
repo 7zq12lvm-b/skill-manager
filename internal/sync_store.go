@@ -36,6 +36,7 @@ type SyncSkillRecord struct {
 	TargetName          string        `json:"targetName"`
 	PreviousTargetNames []string      `json:"previousTargetNames,omitempty"`
 	Tags                []string      `json:"tags,omitempty"`
+	Note                string        `json:"note,omitempty"`
 	Profile             *SkillProfile `json:"profile,omitempty"`
 	UpdatedAt           string        `json:"updatedAt,omitempty"`
 	Source              SyncSource    `json:"source"`
@@ -237,6 +238,7 @@ func normalizeSyncSkillRecord(record SyncSkillRecord) SyncSkillRecord {
 	}
 	record.PreviousTargetNames = cleanNameList(record.PreviousTargetNames)
 	record.Tags = cleanSkillTags(record.Tags)
+	record.Note = strings.TrimSpace(record.Note)
 	record.Profile = normalizeSkillProfile(record.Profile)
 	return record
 }

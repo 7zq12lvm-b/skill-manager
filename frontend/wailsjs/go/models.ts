@@ -158,6 +158,7 @@ export namespace skillmgr {
 	    hasSymlink: boolean;
 	    symlinkTarget?: string;
 	    isActive: boolean;
+	    canRemove: boolean;
 	    ref?: string;
 	    refMismatch: boolean;
 	    validationErrors?: string[];
@@ -170,6 +171,7 @@ export namespace skillmgr {
 	    lastScannedAt?: string;
 	    conflictSources?: ConflictSource[];
 	    tags?: string[];
+	    note?: string;
 	    profile?: SkillProfile;
 	    error?: string;
 
@@ -200,6 +202,7 @@ export namespace skillmgr {
 	        this.hasSymlink = source["hasSymlink"];
 	        this.symlinkTarget = source["symlinkTarget"];
 	        this.isActive = source["isActive"];
+	        this.canRemove = source["canRemove"];
 	        this.ref = source["ref"];
 	        this.refMismatch = source["refMismatch"];
 	        this.validationErrors = source["validationErrors"];
@@ -212,6 +215,7 @@ export namespace skillmgr {
 	        this.lastScannedAt = source["lastScannedAt"];
 	        this.conflictSources = this.convertValues(source["conflictSources"], ConflictSource);
 	        this.tags = source["tags"];
+	        this.note = source["note"];
 	        this.profile = this.convertValues(source["profile"], SkillProfile);
 	        this.error = source["error"];
 	    }

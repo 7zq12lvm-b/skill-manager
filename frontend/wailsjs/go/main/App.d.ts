@@ -50,6 +50,8 @@ export function ReadSkillEnvFile(arg1:string):Promise<string>;
 
 export function ReadSkillFilePreview(arg1:string,arg2:string):Promise<skillmgr.SkillFilePreview>;
 
+export function RemoveMissingSkill(arg1:string):Promise<skillmgr.Inventory>;
+
 export function RemoveRepository(arg1:string):Promise<skillmgr.Inventory>;
 
 export function RemoveSource(arg1:string):Promise<skillmgr.Inventory>;
@@ -67,6 +69,8 @@ export function SaveConfig(arg1:skillmgr.Config):Promise<skillmgr.Inventory>;
 export function SaveLLMConfig(arg1:skillmgr.SyncLLMConfig):Promise<skillmgr.Inventory>;
 
 export function SaveSkillEnvFile(arg1:string,arg2:string):Promise<skillmgr.Inventory>;
+
+export function SaveSkillNote(arg1:string,arg2:string):Promise<skillmgr.Inventory>;
 
 export function SaveSkillTags(arg1:string,arg2:Array<string>):Promise<skillmgr.Inventory>;
 

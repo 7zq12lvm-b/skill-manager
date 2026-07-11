@@ -789,6 +789,68 @@ func (a *App) SaveSkillTags(skillID string, tags []string) (skillmgr.Inventory, 
 	return a.inventory, nil
 }
 
+func (a *App) SaveSkillNote(skillID string, note string) (skillmgr.Inventory, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	skill, err := a.findSkillLocked(skillID)
+	if err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	if !skill.IsSynced {
+		return skillmgr.Inventory{}, errors.New("skill is not available in the shared catalog")
+	}
+	store := a.currentSyncStoreLocked()
+	if store == nil {
+		return skillmgr.Inventory{}, errors.New("sync folder is not configured")
+	}
+	record := syncRecordForSkill(skill, skill.DesiredEnabled != nil && *skill.DesiredEnabled)
+	record.Note = note
+	if err := store.UpsertSkill(record); err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	if err := a.refreshLocked(a.ctx); err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	return a.inventory, nil
+}
+
+func (a *App) RemoveMissingSkill(skillID string) (skillmgr.Inventory, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	skill, err := a.findSkillLocked(skillID)
+	if err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	if skill.Status != skillmgr.StatusMissingSource || !skill.IsSynced || skill.SyncID == "" {
+		return skillmgr.Inventory{}, errors.New("only a missing shared skill can be removed")
+	}
+	repositoryPath := ""
+	for _, repository := range a.config.Repositories {
+		if repository.RepoID == skill.RepoID {
+			repositoryPath = repository.Path
+			break
+		}
+	}
+	info, statErr := os.Stat(repositoryPath)
+	if repositoryPath == "" || statErr != nil || !info.IsDir() {
+		return skillmgr.Inventory{}, errors.New("repository checkout is unavailable; clone it or link an existing checkout instead")
+	}
+	if err := a.removeManagedLinksForMissingSkillLocked(skill); err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	store := a.currentSyncStoreLocked()
+	if store == nil {
+		return skillmgr.Inventory{}, errors.New("sync folder is not configured")
+	}
+	if err := store.DeleteSkill(skill.SyncID); err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	if err := a.refreshLocked(a.ctx); err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	return a.inventory, nil
+}
+
 func (a *App) AddSkillTags(skillIDs []string, tags []string) (skillmgr.BulkTagResult, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -840,7 +902,7 @@ func bulkEnableEligible(skill skillmgr.Skill) bool {
 		return false
 	}
 	switch skill.Status {
-	case skillmgr.StatusConflict, skillmgr.StatusInvalid, skillmgr.StatusMissingSource, skillmgr.StatusMissingPath, skillmgr.StatusError:
+	case skillmgr.StatusConflict, skillmgr.StatusInvalid, skillmgr.StatusMissingSource, skillmgr.StatusError:
 		return false
 	default:
 		return true
@@ -1016,7 +1078,7 @@ func (a *App) refreshLocked(ctx context.Context) error {
 			continue
 		}
 		if skill.Status == skillmgr.StatusConflict || skill.Status == skillmgr.StatusInvalid ||
-			skill.Status == skillmgr.StatusMissingSource || skill.Status == skillmgr.StatusMissingPath || skill.Status == skillmgr.StatusError {
+			skill.Status == skillmgr.StatusMissingSource || skill.Status == skillmgr.StatusError {
 			continue
 		}
 		if *skill.DesiredEnabled && !skill.IsActive {
@@ -1135,6 +1197,7 @@ func syncRecordForSkill(skill skillmgr.Skill, enabled bool) skillmgr.SyncSkillRe
 		TargetName:          targetName,
 		PreviousTargetNames: append([]string(nil), skill.PreviousTargetNames...),
 		Tags:                append([]string(nil), skill.Tags...),
+		Note:                skill.Note,
 		Profile:             cloneSkillProfileForApp(skill.Profile),
 		Source: skillmgr.SyncSource{
 			Provider: skillmgr.GitProvider,
@@ -1165,6 +1228,27 @@ func (a *App) disableSyncedSkillLocked(skill skillmgr.Skill) error {
 		_, _, _ = skillmgr.DisableInTargetForApp(a.config.TargetDirs, previous)
 	}
 	return a.service.Disable(a.ctx, a.config, skill)
+}
+
+func (a *App) removeManagedLinksForMissingSkillLocked(skill skillmgr.Skill) error {
+	targetNames := append([]string(nil), skill.PreviousTargetNames...)
+	currentTargetName := strings.TrimSpace(skill.TargetName)
+	if currentTargetName == "" {
+		currentTargetName = strings.TrimSpace(skill.Name)
+	}
+	targetNames = append(targetNames, currentTargetName)
+	for _, targetName := range targetNames {
+		if strings.TrimSpace(targetName) == "" {
+			continue
+		}
+		candidate := skill
+		candidate.Name = targetName
+		candidate.TargetName = targetName
+		if _, _, err := skillmgr.DisableInTargetForApp(a.config.TargetDirs, candidate); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *App) restartWatcherLocked() error {
