@@ -1,0 +1,56 @@
+scripts/migrate-sync-json/main_test.go
+  s_cc3ac7d0a68836::t_5f9989edf880f6 104-156
+  s_cc3ac7d0a68836::t_36599d1f7a969c 1-103
+internal/sync_store_test.go
+  s_cc3ac7d0a68836::t_74607ac980e6e9 11-18
+  s_cc3ac7d0a68836::t_03066aab80933e 4,233-235,272-286
+  s_cc3ac7d0a68836::t_3234fe4e9a4507 174-224
+  s_cc3ac7d0a68836::t_51223025674c07 225-232,287-288
+  s_cc3ac7d0a68836::t_01c2237236aa53 166-171
+  s_cc3ac7d0a68836::t_f87955364806d6 127,236-271
+  s_cc3ac7d0a68836::t_672691fc358a4c 37-44
+  s_cc3ac7d0a68836::t_5f9989edf880f6 89-90,107,112-116,118
+  s_cc3ac7d0a68836::t_254cb9294b1ab9 5,123-124,134,138,141,172-173,323-359,363-364
+  s_cc3ac7d0a68836::t_cd4f1d4d5d6849 289-322
+  s_cc3ac7d0a68836::t_0a1ff495b709b9 87-88
+  s_cc3ac7d0a68836::t_18a749a1e35018 121-122
+  s_cc3ac7d0a68836::t_653cc62a459405 125-126
+  s_cc3ac7d0a68836::t_970515299de7ba 128-133
+  s_cc3ac7d0a68836::t_7f16fea6502fee 135-137
+  s_cc3ac7d0a68836::t_78f6b93b95d348 139-140
+  s_cc3ac7d0a68836::t_e6b9ee0e35a2a2 56,74-75
+internal/sync_store.go
+  s_cc3ac7d0a68836::t_842ee512f3122a 358,360-363,365,367-407,416-422,424-434,439-440,442,444-592,594
+  s_cc3ac7d0a68836::t_1ef6ab76004631 103,107-109,111-112,116,120-164,167-169,171-184,186-189,191-208,210,212,214-222,224-226,228-246,248-250,253-281,289-292,296,298-312,314-315,319,323-327,331,335-338,346,350,355-357
+  s_cc3ac7d0a68836::t_07b922b8fb84bf 117,366,408-415,423,435-438,441,443
+  s_cc3ac7d0a68836::t_808c80cd386115 16
+  s_cc3ac7d0a68836::t_793bba8010fbc2 4,6,12-13,17-18
+  s_cc3ac7d0a68836::t_dfc1bcaac82020 78-97,99-101
+  s_cc3ac7d0a68836::t_e52bf141bd50c2 102
+  s_cc3ac7d0a68836::t_503505c310dfbb 359
+go.mod
+  s_cc3ac7d0a68836::t_ffb46caf167788 15,29,32,41,43,45-47
+  s_cc3ac7d0a68836::t_2b17e7dc04436f 9
+scripts/migrate-sync-json/main.go
+  s_cc3ac7d0a68836::t_f6adb3dac1c0ca 1-305
+README.md
+  s_cc3ac7d0a68836::t_28632bbb5476fb 15,40-51
+go.sum
+  s_cc3ac7d0a68836::t_c0ffdabf52bb52 7-8,15-16,47-48,57-58,80-83,87-88,95-96,102-103,109-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "89b707ec53e8d1a5ceda922b4cd3109f1d2b8a1a",
+  "prompts": {},
+  "sessions": {
+    "s_cc3ac7d0a68836": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f5b3d-fcbd-7f62-bf15-d7b69a088471",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
