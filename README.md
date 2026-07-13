@@ -12,6 +12,7 @@ The app scans configured skill sources, shows discovered first-level skill folde
 - UI: Tailwind CSS with shadcn/ui-style primitives
 - State: Zustand
 - Config: JSON under the user config directory
+- Shared sync state: SQLite (`skillManager.db`) in the selected sync folder
 - File watching: fsnotify
 
 ## Development
@@ -36,3 +37,15 @@ The macOS build output is written under `build/bin/`.
 go test ./...
 cd frontend && npm run build
 ```
+
+## One-time sync data migration
+
+The app only reads and writes `skillManager.db`; it does not automatically import the retired `skill-manager-sync.json` file. Migrate an existing shared catalog once with:
+
+```bash
+go run ./scripts/migrate-sync-json \
+  --source "/path/to/skill-manager-sync.json" \
+  --destination "/path/to/skillManager.db"
+```
+
+The command refuses to overwrite an existing destination, validates the completed database before publishing it, and leaves the source JSON unchanged.
