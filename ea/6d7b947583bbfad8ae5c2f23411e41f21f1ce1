@@ -1,0 +1,39 @@
+internal/service.go
+  s_1def9c08ceb41f::t_cf8160bc7e015f 214
+app_test.go
+  s_1def9c08ceb41f::t_d46f9e7864f5b5 302-400
+frontend/wailsjs/go/models.ts
+  s_b69c13c3ccb254::t_afe778a8664ec9 2,9,13,29,33,50,54,70,74,95,99,123,127,177,181,222,260,264,298,302,320,324,334,338,349,353,364,368,382,386,396,424,428,440,469,473,486,511,515,524,549,553,562,587,591,600,622,626,632,651-653,657,661,667,686,696,700,713-714,719,723,736,740,749-750,756,760,768,787,793,797,806-811
+frontend/src/store/useSkillStore.ts
+  s_1def9c08ceb41f::t_cf8160bc7e015f 27,81,380-384
+  s_1def9c08ceb41f::t_d8e9e6e2c099af 385-387
+  s_1def9c08ceb41f::t_d377c2aadd21cf 388-391
+app.go
+  s_1def9c08ceb41f::t_cf8160bc7e015f 854-903
+frontend/src/App.tsx
+  s_1def9c08ceb41f::t_cf8160bc7e015f 143,159,889,891-892,1088-1091,1093-1098,3205,3226,3229-3231,3244,3251
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "ea6d7b947583bbfad8ae5c2f23411e41f21f1ce1",
+  "prompts": {},
+  "sessions": {
+    "s_1def9c08ceb41f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f7e76-c364-70c0-8601-b6ca3c8dd85c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    },
+    "s_b69c13c3ccb254": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f72f4-0db0-7380-9124-ee37766b51c1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
