@@ -269,6 +269,101 @@ func TestSyncStoreSkillUpsertDoesNotOverwriteAuthoritativeProfile(t *testing.T) 
 	}
 }
 
+func TestSyncStoreMigratesLegacySQLiteSchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), SyncFileName)
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacySchema := `
+PRAGMA user_version=2;
+CREATE TABLE llm_config (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  base_url TEXT NOT NULL,
+  api_key TEXT NOT NULL,
+  model TEXT NOT NULL,
+  temperature REAL NOT NULL,
+  max_tokens INTEGER NOT NULL
+);
+CREATE TABLE skills (
+  sync_id TEXT PRIMARY KEY,
+  enabled INTEGER NOT NULL,
+  target_name TEXT NOT NULL,
+  previous_target_names_json TEXT NOT NULL DEFAULT '[]',
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  note TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  clone_url TEXT NOT NULL,
+  subpath TEXT NOT NULL,
+  ref TEXT NOT NULL
+);
+CREATE TABLE profiles (
+  sync_id TEXT PRIMARY KEY REFERENCES skills(sync_id) ON DELETE CASCADE,
+  summary_zh TEXT NOT NULL,
+  use_cases_json TEXT NOT NULL DEFAULT '[]',
+  generated_at TEXT NOT NULL,
+  model TEXT NOT NULL,
+  source_hash TEXT NOT NULL,
+  error TEXT NOT NULL
+);
+INSERT INTO llm_config VALUES(1, 'https://api.example.com', 'secret', 'model-v1', 0.25, 4096);
+INSERT INTO skills VALUES(
+  'git:example.com/me/repo//skills/review', 1, 'review', '["old-review"]', '["code", "review"]',
+  'keep this note', '2026-07-21T12:00:00Z', 'git', 'example.com/me/repo',
+  'https://example.com/me/repo.git', 'skills/review', 'main'
+);
+INSERT INTO profiles VALUES(
+  'git:example.com/me/repo//skills/review', '代码审阅助手。', '["检查回归。", "解释风险。"]',
+  '2026-07-21T12:00:00Z', 'model-v1', 'source-hash', ''
+);`
+	if _, err := db.Exec(legacySchema); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewSyncStore(path)
+	document, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	syncID := "git:example.com/me/repo//skills/review"
+	record, ok := document.Skills[syncID]
+	if !ok || !record.Enabled || record.TargetName != "review" || record.Note != "keep this note" {
+		t.Fatalf("unexpected migrated skill: %#v", record)
+	}
+	if len(record.PreviousTargetNames) != 1 || record.PreviousTargetNames[0] != "old-review" {
+		t.Fatalf("unexpected previous target names: %#v", record.PreviousTargetNames)
+	}
+	if len(record.Tags) != 2 || record.Tags[0] != "code" || record.Tags[1] != "review" {
+		t.Fatalf("unexpected tags: %#v", record.Tags)
+	}
+	profile, ok := document.Profiles[syncID]
+	if !ok || profile.SummaryZh != "代码审阅助手。" || len(profile.UseCasesZh) != 2 {
+		t.Fatalf("unexpected migrated profile: %#v", profile)
+	}
+	if document.LLM.BaseURL != "https://api.example.com" || document.LLM.APIKey != "secret" || document.LLM.Model != "model-v1" {
+		t.Fatalf("unexpected migrated LLM config: %#v", document.LLM)
+	}
+
+	verifyDB, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer verifyDB.Close()
+	var version int
+	if err := verifyDB.QueryRow(`SELECT version FROM schema_meta WHERE id = 1`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != syncSchemaVersion {
+		t.Fatalf("expected schema version %d, got %d", syncSchemaVersion, version)
+	}
+}
+
 func TestSyncStoreLoadPreservesCorruptDatabase(t *testing.T) {
 	path := filepath.Join(t.TempDir(), SyncFileName)
 	original := []byte("not a SQLite database")

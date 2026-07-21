@@ -2,6 +2,7 @@ package skillmgr
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -388,7 +389,7 @@ func (s *SyncStore) open() (*sql.DB, error) {
 		return closeWithError(err)
 	}
 	if !isNew {
-		if err := ensureSchema(db); err != nil {
+		if err := ensureOrMigrateSchema(db); err != nil {
 			return closeWithError(err)
 		}
 	}
@@ -415,6 +416,158 @@ func (s *SyncStore) open() (*sql.DB, error) {
 
 type rowQueryer interface {
 	QueryRow(query string, args ...any) *sql.Row
+}
+
+func ensureOrMigrateSchema(db *sql.DB) error {
+	schemaErr := ensureSchema(db)
+	if schemaErr == nil {
+		return nil
+	}
+	legacy, err := isLegacySQLiteSchema(db)
+	if err != nil {
+		return fmt.Errorf("inspect sync database schema: %w", err)
+	}
+	if !legacy {
+		return schemaErr
+	}
+	if err := migrateLegacySQLiteSchema(db); err != nil {
+		return fmt.Errorf("migrate legacy sync database: %w", err)
+	}
+	return ensureSchema(db)
+}
+
+func isLegacySQLiteSchema(db *sql.DB) (bool, error) {
+	metaColumns, err := sqliteTableColumns(db, "schema_meta")
+	if err != nil {
+		return false, err
+	}
+	if len(metaColumns) > 0 {
+		return false, nil
+	}
+	var userVersion int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&userVersion); err != nil {
+		return false, err
+	}
+	if userVersion != 2 {
+		return false, nil
+	}
+	requiredColumns := map[string][]string{
+		"llm_config": {"id", "base_url", "api_key", "model", "temperature", "max_tokens"},
+		"profiles":   {"sync_id", "summary_zh", "use_cases_json", "generated_at", "model", "source_hash", "error"},
+		"skills": {
+			"sync_id", "enabled", "target_name", "previous_target_names_json", "tags_json", "note",
+			"updated_at", "provider", "source_id", "clone_url", "subpath", "ref",
+		},
+	}
+	for table, required := range requiredColumns {
+		columns, err := sqliteTableColumns(db, table)
+		if err != nil {
+			return false, err
+		}
+		for _, column := range required {
+			if !columns[column] {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
+}
+
+func sqliteTableColumns(db *sql.DB, table string) (map[string]bool, error) {
+	rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	columns := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		columns[name] = true
+	}
+	return columns, rows.Err()
+}
+
+func migrateLegacySQLiteSchema(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	document, err := loadLegacySQLiteDocumentTx(tx)
+	if err != nil {
+		return err
+	}
+	for _, table := range []string{"profiles", "skills", "llm_config"} {
+		if _, err := tx.Exec(`DROP TABLE ` + table); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(syncSchema); err != nil {
+		return err
+	}
+	if err := saveLLMConfigTx(tx, document.LLM); err != nil {
+		return err
+	}
+	for syncID, profile := range document.Profiles {
+		if err := upsertProfileTx(tx, syncID, profile); err != nil {
+			return err
+		}
+	}
+	for _, record := range document.Skills {
+		if err := upsertSkillTx(tx, record); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`PRAGMA user_version=0`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func loadLegacySQLiteDocumentTx(tx *sql.Tx) (SyncDocument, error) {
+	document := emptySyncDocument()
+	row := tx.QueryRow(`SELECT base_url, api_key, model, temperature, max_tokens FROM llm_config WHERE id = 1`)
+	if err := row.Scan(&document.LLM.BaseURL, &document.LLM.APIKey, &document.LLM.Model, &document.LLM.Temperature, &document.LLM.MaxTokens); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return document, err
+	}
+	if err := visitRowsTx(tx, `SELECT sync_id, summary_zh, use_cases_json, generated_at, model, source_hash, error FROM profiles`, func(rows *sql.Rows) error {
+		var syncID, useCasesJSON string
+		var profile SkillProfile
+		if err := rows.Scan(&syncID, &profile.SummaryZh, &useCasesJSON, &profile.GeneratedAt, &profile.Model, &profile.SourceHash, &profile.Error); err != nil {
+			return err
+		}
+		if err := json.Unmarshal([]byte(useCasesJSON), &profile.UseCasesZh); err != nil {
+			return fmt.Errorf("decode profile use cases for %q: %w", syncID, err)
+		}
+		document.Profiles[syncID] = profile
+		return nil
+	}); err != nil {
+		return document, err
+	}
+	if err := visitRowsTx(tx, `SELECT sync_id, enabled, target_name, previous_target_names_json, tags_json, note, updated_at, provider, source_id, clone_url, subpath, ref FROM skills`, func(rows *sql.Rows) error {
+		var syncID, previousNamesJSON, tagsJSON string
+		var enabled int
+		var record SyncSkillRecord
+		if err := rows.Scan(&syncID, &enabled, &record.TargetName, &previousNamesJSON, &tagsJSON, &record.Note, &record.UpdatedAt,
+			&record.Source.Provider, &record.Source.ID, &record.Source.Locator.CloneURL, &record.Source.Locator.Subpath, &record.Source.Locator.Ref); err != nil {
+			return err
+		}
+		record.Enabled = enabled != 0
+		if err := json.Unmarshal([]byte(previousNamesJSON), &record.PreviousTargetNames); err != nil {
+			return fmt.Errorf("decode previous target names for %q: %w", syncID, err)
+		}
+		if err := json.Unmarshal([]byte(tagsJSON), &record.Tags); err != nil {
+			return fmt.Errorf("decode tags for %q: %w", syncID, err)
+		}
+		document.Skills[syncID] = record
+		return nil
+	}); err != nil {
+		return document, err
+	}
+	return normalizeSyncDocument(document), nil
 }
 
 func ensureSchema(queryer rowQueryer) error {
