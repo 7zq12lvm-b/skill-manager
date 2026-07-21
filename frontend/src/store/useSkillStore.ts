@@ -24,6 +24,7 @@ import {
   ReadSkillEnvFile,
   ReadSkillFilePreview,
   RemoveMissingSkill,
+  RemoveSkill,
   RemoveSource,
   RenameRepository,
   RenameSource,
@@ -77,6 +78,7 @@ type SkillStore = {
   saveSkillTags: (skillId: string, tags: string[]) => Promise<void>;
   addSkillTags: (skillIds: string[], tags: string[]) => Promise<void>;
   removeMissingSkill: (skillId: string) => Promise<void>;
+  removeSkill: (skillId: string) => Promise<void>;
   listSkillFiles: (skillId: string, relativeDir: string) => Promise<skillmgr.SkillFileEntry[]>;
   readSkillFilePreview: (skillId: string, relativeFile: string) => Promise<skillmgr.SkillFilePreview>;
   openInTerminal: (path: string) => Promise<void>;
@@ -368,6 +370,18 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
     await waitForPaint();
     try {
       const inventory = await RemoveMissingSkill(skillId);
+      get().setInventory(inventory);
+      set({ loading: false, loadingLabel: undefined });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error), loading: false, loadingLabel: undefined });
+      throw error;
+    }
+  },
+  removeSkill: async (skillId) => {
+    set({ loading: true, loadingLabel: "Removing skill...", error: undefined });
+    await waitForPaint();
+    try {
+      const inventory = await RemoveSkill(skillId);
       get().setInventory(inventory);
       set({ loading: false, loadingLabel: undefined });
     } catch (error) {

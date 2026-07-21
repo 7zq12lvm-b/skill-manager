@@ -140,6 +140,7 @@ function App() {
     saveSkillTags,
     addSkillTags,
     removeMissingSkill,
+    removeSkill,
     listSkillFiles,
     readSkillFilePreview,
     openInTerminal,
@@ -155,7 +156,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sourceToEdit, setSourceToEdit] = useState<RepositoryPanelItem>();
   const [sourceToRemove, setSourceToRemove] = useState<RepositoryPanelItem>();
-  const [missingSkillToRemove, setMissingSkillToRemove] = useState<skillmgr.Skill>();
+  const [skillToRemove, setSkillToRemove] = useState<skillmgr.Skill>();
   const [cloneDraft, setCloneDraft] = useState<CloneDraft>();
   const [sourcePath, setSourcePath] = useState("");
   const [sourcePanelWidth, setSourcePanelWidth] = useState(() =>
@@ -885,10 +886,10 @@ function App() {
                     <SquareTerminal aria-hidden="true" className="h-4 w-4" />
                   </IconButton>
                 )}
-              {selectedSkill?.status === "missing-source" && selectedSkill.canRemove && (
+              {selectedSkill?.canRemove && (
                 <IconButton
-                  title="Remove this unavailable skill from the shared catalog on every synced device without deleting repository files."
-                  onClick={() => setMissingSkillToRemove(selectedSkill)}
+                  title="Remove this skill from Skill Manager without deleting its repository files."
+                  onClick={() => setSkillToRemove(selectedSkill)}
                 >
                   <Trash2 aria-hidden="true" className="h-4 w-4" />
                 </IconButton>
@@ -1084,13 +1085,17 @@ function App() {
         />
       )}
 
-      {missingSkillToRemove && (
-        <RemoveMissingSkillModal
-          skill={missingSkillToRemove}
-          onClose={() => setMissingSkillToRemove(undefined)}
+      {skillToRemove && (
+        <RemoveSkillModal
+          skill={skillToRemove}
+          onClose={() => setSkillToRemove(undefined)}
           onRemove={async () => {
-            await removeMissingSkill(missingSkillToRemove.id);
-            setMissingSkillToRemove(undefined);
+            if (skillToRemove.status === "missing-source") {
+              await removeMissingSkill(skillToRemove.id);
+            } else {
+              await removeSkill(skillToRemove.id);
+            }
+            setSkillToRemove(undefined);
           }}
         />
       )}
@@ -3197,7 +3202,7 @@ function RemoveSourceModal({
   );
 }
 
-function RemoveMissingSkillModal({
+function RemoveSkillModal({
   skill,
   onClose,
   onRemove,
@@ -3218,10 +3223,12 @@ function RemoveMissingSkillModal({
   }
 
   return (
-    <Modal title="Remove Missing Skill" onClose={onClose}>
+    <Modal title={skill.status === "missing-source" ? "Remove Missing Skill" : "Remove Skill"} onClose={onClose}>
       <div className="space-y-4">
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          This removes the missing skill from the shared catalog and every synced device. Repository files are not deleted.
+          {skill.status === "missing-source"
+            ? "This removes the missing skill from the shared catalog and every synced device. Repository files are not deleted."
+            : "This removes the skill record, its managed links, and excludes its path from future scans on this machine. Repository files are not deleted."}
         </div>
         <div>
           <div className="text-sm font-medium">{skill.displayName || skill.name}</div>
@@ -3234,14 +3241,14 @@ function RemoveMissingSkillModal({
             variant="ghost"
             onClick={onClose}
             disabled={removing}
-            title="Close this dialog and keep the missing skill in the shared catalog."
+            title="Close this dialog and keep the skill in Skill Manager."
           >
             Cancel
           </Button>
           <Button
             onClick={remove}
             disabled={removing}
-            title="Remove this unavailable skill record and its matching managed links from every synced device."
+            title="Remove this skill record and its matching managed links without deleting repository files."
           >
             {removing ? "Removing…" : "Remove Skill"}
           </Button>

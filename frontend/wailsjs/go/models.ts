@@ -1,16 +1,16 @@
 export namespace skillmgr {
-
+	
 	export class SyncLLMConfig {
 	    baseUrl?: string;
 	    apiKey?: string;
 	    model?: string;
 	    temperature?: number;
 	    maxTokens?: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SyncLLMConfig(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.baseUrl = source["baseUrl"];
@@ -26,11 +26,11 @@ export namespace skillmgr {
 	    conflicts: number;
 	    invalid: number;
 	    errors: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Summary(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.skillsFound = source["skillsFound"];
@@ -47,11 +47,11 @@ export namespace skillmgr {
 	    model?: string;
 	    sourceHash?: string;
 	    error?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SkillProfile(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.summaryZh = source["summaryZh"];
@@ -67,11 +67,11 @@ export namespace skillmgr {
 	    sourceId: string;
 	    sourcePath: string;
 	    status: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ConflictSource(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.skillId = source["skillId"];
@@ -92,11 +92,11 @@ export namespace skillmgr {
 	    userInvocable?: boolean;
 	    argumentHint?: string;
 	    arguments?: any;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SkillManifest(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -120,11 +120,11 @@ export namespace skillmgr {
 	    symlinkTarget?: string;
 	    isActive: boolean;
 	    error?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SkillTarget(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.targetDir = source["targetDir"];
@@ -174,11 +174,11 @@ export namespace skillmgr {
 	    note?: string;
 	    profile?: SkillProfile;
 	    error?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Skill(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -219,7 +219,7 @@ export namespace skillmgr {
 	        this.profile = this.convertValues(source["profile"], SkillProfile);
 	        this.error = source["error"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -257,11 +257,11 @@ export namespace skillmgr {
 	    dirty: boolean;
 	    errorCount: number;
 	    error?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Repository(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -295,11 +295,11 @@ export namespace skillmgr {
 	    lastScannedAt?: string;
 	    errorCount: number;
 	    error?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SkillSource(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -317,11 +317,11 @@ export namespace skillmgr {
 	export class SyncConfig {
 	    folder?: string;
 	    lastAppliedAt?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SyncConfig(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.folder = source["folder"];
@@ -331,11 +331,11 @@ export namespace skillmgr {
 	export class ScanConfig {
 	    autoRescanOnStartup: boolean;
 	    watchSourceFolders: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ScanConfig(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.autoRescanOnStartup = source["autoRescanOnStartup"];
@@ -346,11 +346,11 @@ export namespace skillmgr {
 	    mode: string;
 	    requiredFiles: string[];
 	    showInvalid: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ValidationConfig(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.mode = source["mode"];
@@ -361,11 +361,11 @@ export namespace skillmgr {
 	export class SourceInstallationOptions {
 	    scanRoots?: string[];
 	    ignorePaths?: string[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SourceInstallationOptions(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.scanRoots = source["scanRoots"];
@@ -379,11 +379,11 @@ export namespace skillmgr {
 	    alias?: string;
 	    enabled: boolean;
 	    options?: SourceInstallationOptions;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SourceInstallation(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.provider = source["provider"];
@@ -393,7 +393,7 @@ export namespace skillmgr {
 	        this.enabled = source["enabled"];
 	        this.options = this.convertValues(source["options"], SourceInstallationOptions);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -421,11 +421,11 @@ export namespace skillmgr {
 	    sync: SyncConfig;
 	    conflictHandling: string;
 	    sourcePriority: string[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.version = source["version"];
@@ -437,7 +437,7 @@ export namespace skillmgr {
 	        this.conflictHandling = source["conflictHandling"];
 	        this.sourcePriority = source["sourcePriority"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -466,11 +466,11 @@ export namespace skillmgr {
 	    syncPath?: string;
 	    syncError?: string;
 	    llmConfig?: SyncLLMConfig;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Inventory(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.config = this.convertValues(source["config"], Config);
@@ -483,7 +483,7 @@ export namespace skillmgr {
 	        this.syncError = source["syncError"];
 	        this.llmConfig = this.convertValues(source["llmConfig"], SyncLLMConfig);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -508,11 +508,11 @@ export namespace skillmgr {
 	    alreadyDisabled: number;
 	    skipped: number;
 	    failed?: string[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new BulkDisableResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.inventory = this.convertValues(source["inventory"], Inventory);
@@ -521,7 +521,7 @@ export namespace skillmgr {
 	        this.skipped = source["skipped"];
 	        this.failed = source["failed"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -546,11 +546,11 @@ export namespace skillmgr {
 	    alreadyEnabled: number;
 	    skipped: number;
 	    failed?: string[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new BulkEnableResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.inventory = this.convertValues(source["inventory"], Inventory);
@@ -559,7 +559,7 @@ export namespace skillmgr {
 	        this.skipped = source["skipped"];
 	        this.failed = source["failed"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -584,11 +584,11 @@ export namespace skillmgr {
 	    unchanged: number;
 	    skipped: number;
 	    failed?: string[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new BulkTagResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.inventory = this.convertValues(source["inventory"], Inventory);
@@ -597,7 +597,7 @@ export namespace skillmgr {
 	        this.skipped = source["skipped"];
 	        this.failed = source["failed"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -619,17 +619,17 @@ export namespace skillmgr {
 	export class CloneRepositoryResult {
 	    inventory: Inventory;
 	    message: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new CloneRepositoryResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.inventory = this.convertValues(source["inventory"], Inventory);
 	        this.message = source["message"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -648,23 +648,23 @@ export namespace skillmgr {
 		    return a;
 		}
 	}
-
-
-
+	
+	
+	
 	export class PullSourceResult {
 	    inventory: Inventory;
 	    message: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new PullSourceResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.inventory = this.convertValues(source["inventory"], Inventory);
 	        this.message = source["message"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -683,7 +683,7 @@ export namespace skillmgr {
 		    return a;
 		}
 	}
-
+	
 	export class RepositoryConfig {
 	    id: string;
 	    repoId: string;
@@ -693,11 +693,11 @@ export namespace skillmgr {
 	    cloneUrl?: string;
 	    scanRoots?: string[];
 	    ignorePaths?: string[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RepositoryConfig(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -710,17 +710,17 @@ export namespace skillmgr {
 	        this.ignorePaths = source["ignorePaths"];
 	    }
 	}
-
-
+	
+	
 	export class SkillFileEntry {
 	    name: string;
 	    path: string;
 	    isDir: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SkillFileEntry(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -733,11 +733,11 @@ export namespace skillmgr {
 	    previewable: boolean;
 	    content?: string;
 	    reason?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SkillFilePreview(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.path = source["path"];
@@ -746,18 +746,18 @@ export namespace skillmgr {
 	        this.reason = source["reason"];
 	    }
 	}
-
-
+	
+	
 	export class SkillProfileResult {
 	    inventory: Inventory;
 	    profile?: SkillProfile;
 	    generated: boolean;
 	    message?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SkillProfileResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.inventory = this.convertValues(source["inventory"], Inventory);
@@ -765,7 +765,7 @@ export namespace skillmgr {
 	        this.generated = source["generated"];
 	        this.message = source["message"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -784,17 +784,17 @@ export namespace skillmgr {
 		    return a;
 		}
 	}
-
+	
 	export class SkillSourceConfig {
 	    id: string;
 	    path: string;
 	    alias?: string;
 	    enabled: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SkillSourceConfig(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -803,12 +803,12 @@ export namespace skillmgr {
 	        this.enabled = source["enabled"];
 	    }
 	}
-
-
-
-
-
-
+	
+	
+	
+	
+	
+	
 
 }
 

@@ -211,6 +211,7 @@ func (s *Service) scanRepository(ctx context.Context, config RepositoryConfig, a
 			SymlinkPath:   filepath.Join(appConfig.TargetDirs[0], targetName),
 			Status:        StatusDisabled,
 			CanSync:       config.RepoID != "",
+			CanRemove:     config.RepoID != "" && repoSubpath != "",
 			Ref:           repository.CurrentRef,
 			LastScannedAt: scannedAt,
 		}

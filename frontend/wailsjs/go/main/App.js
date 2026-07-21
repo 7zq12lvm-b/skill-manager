@@ -106,6 +106,10 @@ export function RemoveRepository(arg1) {
   return window['go']['main']['App']['RemoveRepository'](arg1);
 }
 
+export function RemoveSkill(arg1) {
+  return window['go']['main']['App']['RemoveSkill'](arg1);
+}
+
 export function RemoveSource(arg1) {
   return window['go']['main']['App']['RemoveSource'](arg1);
 }

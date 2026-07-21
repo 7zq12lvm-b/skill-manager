@@ -851,6 +851,56 @@ func (a *App) RemoveMissingSkill(skillID string) (skillmgr.Inventory, error) {
 	return a.inventory, nil
 }
 
+func (a *App) RemoveSkill(skillID string) (skillmgr.Inventory, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	skill, err := a.findSkillLocked(skillID)
+	if err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	if skill.Status == skillmgr.StatusMissingSource {
+		return skillmgr.Inventory{}, errors.New("use missing skill removal for an unavailable shared skill")
+	}
+	repoSubpath := strings.Trim(strings.TrimSpace(filepath.ToSlash(skill.RepoSubpath)), "/")
+	if skill.RepoID == "" || repoSubpath == "" || repoSubpath == "." {
+		return skillmgr.Inventory{}, errors.New("only a skill discovered inside a Git repository can be removed")
+	}
+	repositoryIndex := -1
+	for index := range a.config.Repositories {
+		repository := a.config.Repositories[index]
+		if repository.RepoID == skill.RepoID || repository.ID == skill.SourceID {
+			repositoryIndex = index
+			break
+		}
+	}
+	if repositoryIndex < 0 {
+		return skillmgr.Inventory{}, errors.New("the skill repository is not configured on this machine")
+	}
+	if err := a.removeManagedLinksForMissingSkillLocked(skill); err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	if store := a.currentSyncStoreLocked(); store != nil && skill.SyncID != "" {
+		if err := store.DeleteSkill(skill.SyncID); err != nil {
+			return skillmgr.Inventory{}, err
+		}
+	}
+	ignored := a.config.Repositories[repositoryIndex].IgnorePaths
+	alreadyIgnored := false
+	for _, ignoredPath := range ignored {
+		if strings.Trim(strings.TrimSpace(filepath.ToSlash(ignoredPath)), "/") == repoSubpath {
+			alreadyIgnored = true
+			break
+		}
+	}
+	if !alreadyIgnored {
+		a.config.Repositories[repositoryIndex].IgnorePaths = append(ignored, repoSubpath)
+	}
+	if err := a.persistAndRefreshLocked(); err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	return a.inventory, nil
+}
+
 func (a *App) AddSkillTags(skillIDs []string, tags []string) (skillmgr.BulkTagResult, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

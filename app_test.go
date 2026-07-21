@@ -299,6 +299,105 @@ func TestRemoveMissingSkillRequiresInstalledRepositoryAndCleansManagedLink(t *te
 	}
 }
 
+func TestRemoveSkillExcludesRepositoryPathWithoutDeletingSource(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	root := t.TempDir()
+	repositoryPath := filepath.Join(root, "repo")
+	runAppGit(t, root, "init", repositoryPath)
+	runAppGit(t, repositoryPath, "config", "user.email", "test@example.com")
+	runAppGit(t, repositoryPath, "config", "user.name", "Test")
+	runAppGit(t, repositoryPath, "remote", "add", "origin", "https://github.com/example/shared-skills.git")
+	for _, subpath := range []string{"skills/main", "examples/demo/skills/duplicate"} {
+		path := filepath.Join(repositoryPath, filepath.FromSlash(subpath))
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("---\nname: test\ndescription: test skill\n---\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runAppGit(t, repositoryPath, "add", ".")
+	runAppGit(t, repositoryPath, "commit", "-m", "add skills")
+
+	targetDir := filepath.Join(root, "target")
+	syncFolder := filepath.Join(root, "sync")
+	config := skillmgr.DefaultConfig()
+	config.Scan.WatchSourceFolders = false
+	config.TargetDirs = []string{targetDir}
+	config.Sync.Folder = syncFolder
+	config.Repositories = []skillmgr.RepositoryConfig{{
+		ID:        "github.com/example/shared-skills",
+		RepoID:    "github.com/example/shared-skills",
+		Path:      repositoryPath,
+		Enabled:   true,
+		CloneURL:  "https://github.com/example/shared-skills.git",
+		ScanRoots: []string{"."},
+	}}
+	app := &App{
+		ctx:     context.Background(),
+		store:   skillmgr.NewConfigStore(filepath.Join(root, "config.json")),
+		service: skillmgr.NewService(),
+		config:  config,
+	}
+	if err := app.refreshLocked(app.ctx); err != nil {
+		t.Fatal(err)
+	}
+	var duplicate skillmgr.Skill
+	for _, skill := range app.inventory.Skills {
+		if skill.RepoSubpath == "examples/demo/skills/duplicate" {
+			duplicate = skill
+			break
+		}
+	}
+	if duplicate.ID == "" || !duplicate.CanRemove {
+		t.Fatalf("expected removable example skill, got %#v", duplicate)
+	}
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	managedLink := filepath.Join(targetDir, duplicate.TargetName)
+	if err := os.Symlink(duplicate.SourcePath, managedLink); err != nil {
+		t.Fatal(err)
+	}
+
+	inventory, err := app.RemoveSkill(duplicate.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory.Skills) != 1 || inventory.Skills[0].RepoSubpath != "skills/main" {
+		t.Fatalf("expected only the main skill after removal, got %#v", inventory.Skills)
+	}
+	if _, err := os.Stat(filepath.Join(duplicate.SourcePath, "SKILL.md")); err != nil {
+		t.Fatalf("expected source files to remain: %v", err)
+	}
+	if _, err := os.Lstat(managedLink); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected managed link to be removed, got %v", err)
+	}
+	loaded, err := app.store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Repositories) != 1 || len(loaded.Repositories[0].IgnorePaths) != 1 || loaded.Repositories[0].IgnorePaths[0] != duplicate.RepoSubpath {
+		t.Fatalf("expected removed path to persist in ignorePaths, got %#v", loaded.Repositories)
+	}
+	document, err := skillmgr.NewSyncStore(skillmgr.SyncPathFromFolder(syncFolder)).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := document.Skills[duplicate.SyncID]; exists {
+		t.Fatalf("expected shared skill record to be deleted, got %#v", document.Skills[duplicate.SyncID])
+	}
+	rescanned, err := app.RescanAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rescanned.Skills) != 1 || rescanned.Skills[0].RepoSubpath != "skills/main" {
+		t.Fatalf("expected ignored skill to stay removed after rescan, got %#v", rescanned.Skills)
+	}
+}
+
 func TestValidateTerminalDirectory(t *testing.T) {
 	root := t.TempDir()
 	filePath := filepath.Join(root, "file.txt")

@@ -54,6 +54,8 @@ export function RemoveMissingSkill(arg1:string):Promise<skillmgr.Inventory>;
 
 export function RemoveRepository(arg1:string):Promise<skillmgr.Inventory>;
 
+export function RemoveSkill(arg1:string):Promise<skillmgr.Inventory>;
+
 export function RemoveSource(arg1:string):Promise<skillmgr.Inventory>;
 
 export function RenameRepository(arg1:string,arg2:string):Promise<skillmgr.Inventory>;
