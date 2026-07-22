@@ -34,7 +34,7 @@ func TestRunMigratesSyncJSONWithoutChangingSource(t *testing.T) {
 		},
 		Profiles: map[string]skillmgr.SkillProfile{
 			syncID:   profile,
-			"orphan": {SummaryZh: "孤立简介。", UseCasesZh: []string{"仍需保留。"}},
+			"orphan": {SummaryZh: "孤立简介。", UseCasesZh: []string{"迁移时应清理。"}},
 		},
 		Skills: map[string]skillmgr.SyncSkillRecord{
 			syncID: {
@@ -82,7 +82,7 @@ func TestRunMigratesSyncJSONWithoutChangingSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(loaded.Skills) != 1 || len(loaded.Profiles) != 2 {
+	if len(loaded.Skills) != 1 || len(loaded.Profiles) != 1 {
 		t.Fatalf("unexpected migrated counts: skills=%d profiles=%d", len(loaded.Skills), len(loaded.Profiles))
 	}
 	record := loaded.Skills[syncID]
@@ -92,8 +92,8 @@ func TestRunMigratesSyncJSONWithoutChangingSource(t *testing.T) {
 	if got := loaded.Profiles[syncID].UseCasesZh; len(got) != 2 || got[0] != "发现回归。" || got[1] != "解释修改。" {
 		t.Fatalf("unexpected migrated profile use cases: %#v", got)
 	}
-	if orphan, ok := loaded.Profiles["orphan"]; !ok || orphan.SummaryZh != "孤立简介。" {
-		t.Fatalf("expected orphan profile to survive, got %#v", orphan)
+	if orphan, ok := loaded.Profiles["orphan"]; ok {
+		t.Fatalf("expected orphan profile to be removed, got %#v", orphan)
 	}
 	for _, suffix := range []string{"-journal", "-wal", "-shm"} {
 		if _, err := os.Lstat(destinationPath + suffix); !os.IsNotExist(err) {

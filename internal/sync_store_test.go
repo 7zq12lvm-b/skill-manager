@@ -172,7 +172,7 @@ func TestSyncStoreNormalizesAndClearsSkillNote(t *testing.T) {
 	}
 }
 
-func TestSyncStoreDeleteSkillPreservesOtherSharedState(t *testing.T) {
+func TestSyncStoreDeleteSkillRemovesAssociatedProfileAndPreservesOtherSharedState(t *testing.T) {
 	store := NewSyncStore(filepath.Join(t.TempDir(), SyncFileName))
 	deletedID := "git:example.com/me/repo//skills/deleted"
 	keptID := "git:example.com/me/repo//skills/kept"
@@ -184,7 +184,8 @@ func TestSyncStoreDeleteSkillPreservesOtherSharedState(t *testing.T) {
 			Model:   "model-v1",
 		},
 		Profiles: map[string]SkillProfile{
-			deletedID: {SummaryZh: "保留的独立简介。", UseCasesZh: []string{"用于验证删除语义。"}},
+			deletedID: {SummaryZh: "应删除的简介。", UseCasesZh: []string{"应随简介一起删除。"}},
+			keptID:    {SummaryZh: "应保留的简介。", UseCasesZh: []string{"用于验证其他共享状态不受影响。"}},
 		},
 		Skills: map[string]SyncSkillRecord{
 			deletedID: {
@@ -215,8 +216,11 @@ func TestSyncStoreDeleteSkillPreservesOtherSharedState(t *testing.T) {
 	if record, exists := loaded.Skills[keptID]; !exists || !record.Enabled || len(record.Tags) != 1 || record.Tags[0] != "kept" {
 		t.Fatalf("expected other skill to remain unchanged, got %#v", record)
 	}
-	if profile, exists := loaded.Profiles[deletedID]; !exists || profile.SummaryZh != "保留的独立简介。" {
-		t.Fatalf("expected top-level profile to survive skill deletion, got %#v", profile)
+	if profile, exists := loaded.Profiles[deletedID]; exists {
+		t.Fatalf("expected associated profile to be deleted, got %#v", profile)
+	}
+	if profile, exists := loaded.Profiles[keptID]; !exists || profile.SummaryZh != "应保留的简介。" || len(profile.UseCasesZh) != 1 {
+		t.Fatalf("expected other profile to remain unchanged, got %#v", profile)
 	}
 	if loaded.LLM.BaseURL != "https://api.example.com" || loaded.LLM.APIKey != "secret" || loaded.LLM.Model != "model-v1" {
 		t.Fatalf("expected LLM config to remain unchanged, got %#v", loaded.LLM)
@@ -230,6 +234,102 @@ func TestSyncStoreCheckIntegrityAcceptsValidDatabase(t *testing.T) {
 	}
 	if err := store.CheckIntegrity(); err != nil {
 		t.Fatalf("expected valid database to pass integrity checks: %v", err)
+	}
+}
+
+func TestSyncStoreMigratesLegacySchemaToJSONColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), SyncFileName)
+	syncID := "git:example.com/me/repo//skills/review"
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(legacySyncSchemaV1); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	statements := []string{
+		`INSERT INTO llm_config(id, base_url, api_key, model, temperature, max_tokens) VALUES(1, 'https://api.example.com', 'secret', 'model-v1', 0.2, 900)`,
+		`INSERT INTO skills(sync_id, enabled, target_name, note, updated_at, provider, source_id, clone_url, subpath, ref) VALUES('` + syncID + `', 1, 'review', 'shared note', '2026-07-21T00:00:00Z', 'git', 'example.com/me/repo', 'https://example.com/me/repo.git', 'skills/review', 'main')`,
+		`INSERT INTO skill_previous_target_names(sync_id, position, target_name) VALUES('` + syncID + `', 0, 'old-review')`,
+		`INSERT INTO skill_tags(sync_id, tag) VALUES('` + syncID + `', 'alpha')`,
+		`INSERT INTO skill_tags(sync_id, tag) VALUES('` + syncID + `', 'quality')`,
+		`INSERT INTO profiles(sync_id, summary_zh, generated_at, model, source_hash, error) VALUES('` + syncID + `', '代码审阅助手。', '2026-07-20T00:00:00Z', 'model-v1', 'hash-v1', '')`,
+		`INSERT INTO profile_use_cases(sync_id, position, use_case_zh) VALUES('` + syncID + `', 0, '检查回归风险。')`,
+		`INSERT INTO profile_use_cases(sync_id, position, use_case_zh) VALUES('` + syncID + `', 1, '解释修改建议。')`,
+	}
+	for _, statement := range statements {
+		if _, err := db.Exec(statement); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	document, err := NewSyncStore(path).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := document.Skills[syncID]
+	if !record.Enabled || record.TargetName != "review" || record.Note != "shared note" ||
+		len(record.Tags) != 2 || record.Tags[0] != "alpha" || record.Tags[1] != "quality" ||
+		len(record.PreviousTargetNames) != 1 || record.PreviousTargetNames[0] != "old-review" {
+		t.Fatalf("unexpected migrated skill: %#v", record)
+	}
+	profile := document.Profiles[syncID]
+	if profile.SummaryZh != "代码审阅助手。" || len(profile.UseCasesZh) != 2 ||
+		profile.UseCasesZh[0] != "检查回归风险。" || profile.UseCasesZh[1] != "解释修改建议。" {
+		t.Fatalf("unexpected migrated profile: %#v", profile)
+	}
+	if document.LLM.BaseURL != "https://api.example.com" || document.LLM.APIKey != "secret" || document.LLM.Model != "model-v1" {
+		t.Fatalf("unexpected migrated LLM config: %#v", document.LLM)
+	}
+
+	db, err = sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var version int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != 2 {
+		t.Fatalf("expected user_version 2, got %d", version)
+	}
+	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var tables []string
+	for rows.Next() {
+		var table string
+		if err := rows.Scan(&table); err != nil {
+			t.Fatal(err)
+		}
+		tables = append(tables, table)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	wantTables := []string{"llm_config", "profiles", "skills"}
+	if len(tables) != len(wantTables) {
+		t.Fatalf("expected compact schema tables %v, got %v", wantTables, tables)
+	}
+	for index := range wantTables {
+		if tables[index] != wantTables[index] {
+			t.Fatalf("expected compact schema tables %v, got %v", wantTables, tables)
+		}
+	}
+	var profileParent, deleteAction string
+	if err := db.QueryRow(`SELECT "table", on_delete FROM pragma_foreign_key_list('profiles') WHERE "from" = 'sync_id'`).Scan(&profileParent, &deleteAction); err != nil {
+		t.Fatal(err)
+	}
+	if profileParent != "skills" || deleteAction != "CASCADE" {
+		t.Fatalf("expected profiles to cascade from skills, got parent=%q delete=%q", profileParent, deleteAction)
 	}
 }
 
@@ -266,101 +366,6 @@ func TestSyncStoreSkillUpsertDoesNotOverwriteAuthoritativeProfile(t *testing.T) 
 	}
 	if profile := loaded.Skills[syncID].Profile; profile == nil || profile.SummaryZh != "权威简介。" {
 		t.Fatalf("expected skill mirror to use authoritative profile, got %#v", profile)
-	}
-}
-
-func TestSyncStoreMigratesLegacySQLiteSchema(t *testing.T) {
-	path := filepath.Join(t.TempDir(), SyncFileName)
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacySchema := `
-PRAGMA user_version=2;
-CREATE TABLE llm_config (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  base_url TEXT NOT NULL,
-  api_key TEXT NOT NULL,
-  model TEXT NOT NULL,
-  temperature REAL NOT NULL,
-  max_tokens INTEGER NOT NULL
-);
-CREATE TABLE skills (
-  sync_id TEXT PRIMARY KEY,
-  enabled INTEGER NOT NULL,
-  target_name TEXT NOT NULL,
-  previous_target_names_json TEXT NOT NULL DEFAULT '[]',
-  tags_json TEXT NOT NULL DEFAULT '[]',
-  note TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  provider TEXT NOT NULL,
-  source_id TEXT NOT NULL,
-  clone_url TEXT NOT NULL,
-  subpath TEXT NOT NULL,
-  ref TEXT NOT NULL
-);
-CREATE TABLE profiles (
-  sync_id TEXT PRIMARY KEY REFERENCES skills(sync_id) ON DELETE CASCADE,
-  summary_zh TEXT NOT NULL,
-  use_cases_json TEXT NOT NULL DEFAULT '[]',
-  generated_at TEXT NOT NULL,
-  model TEXT NOT NULL,
-  source_hash TEXT NOT NULL,
-  error TEXT NOT NULL
-);
-INSERT INTO llm_config VALUES(1, 'https://api.example.com', 'secret', 'model-v1', 0.25, 4096);
-INSERT INTO skills VALUES(
-  'git:example.com/me/repo//skills/review', 1, 'review', '["old-review"]', '["code", "review"]',
-  'keep this note', '2026-07-21T12:00:00Z', 'git', 'example.com/me/repo',
-  'https://example.com/me/repo.git', 'skills/review', 'main'
-);
-INSERT INTO profiles VALUES(
-  'git:example.com/me/repo//skills/review', '代码审阅助手。', '["检查回归。", "解释风险。"]',
-  '2026-07-21T12:00:00Z', 'model-v1', 'source-hash', ''
-);`
-	if _, err := db.Exec(legacySchema); err != nil {
-		db.Close()
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	store := NewSyncStore(path)
-	document, err := store.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	syncID := "git:example.com/me/repo//skills/review"
-	record, ok := document.Skills[syncID]
-	if !ok || !record.Enabled || record.TargetName != "review" || record.Note != "keep this note" {
-		t.Fatalf("unexpected migrated skill: %#v", record)
-	}
-	if len(record.PreviousTargetNames) != 1 || record.PreviousTargetNames[0] != "old-review" {
-		t.Fatalf("unexpected previous target names: %#v", record.PreviousTargetNames)
-	}
-	if len(record.Tags) != 2 || record.Tags[0] != "code" || record.Tags[1] != "review" {
-		t.Fatalf("unexpected tags: %#v", record.Tags)
-	}
-	profile, ok := document.Profiles[syncID]
-	if !ok || profile.SummaryZh != "代码审阅助手。" || len(profile.UseCasesZh) != 2 {
-		t.Fatalf("unexpected migrated profile: %#v", profile)
-	}
-	if document.LLM.BaseURL != "https://api.example.com" || document.LLM.APIKey != "secret" || document.LLM.Model != "model-v1" {
-		t.Fatalf("unexpected migrated LLM config: %#v", document.LLM)
-	}
-
-	verifyDB, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer verifyDB.Close()
-	var version int
-	if err := verifyDB.QueryRow(`SELECT version FROM schema_meta WHERE id = 1`).Scan(&version); err != nil {
-		t.Fatal(err)
-	}
-	if version != syncSchemaVersion {
-		t.Fatalf("expected schema version %d, got %d", syncSchemaVersion, version)
 	}
 }
 
@@ -428,7 +433,7 @@ func TestSyncStoreLoadPreservesUnsupportedSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`UPDATE schema_meta SET version = 999 WHERE id = 1`); err != nil {
+	if _, err := db.Exec(`PRAGMA user_version = 999`); err != nil {
 		db.Close()
 		t.Fatal(err)
 	}
@@ -459,3 +464,56 @@ func TestSyncStoreLoadPreservesUnsupportedSchema(t *testing.T) {
 		t.Fatal("unsupported database was modified")
 	}
 }
+
+const legacySyncSchemaV1 = `
+CREATE TABLE schema_meta (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  version INTEGER NOT NULL
+);
+INSERT INTO schema_meta(id, version) VALUES(1, 1);
+CREATE TABLE llm_config (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  base_url TEXT NOT NULL,
+  api_key TEXT NOT NULL,
+  model TEXT NOT NULL,
+  temperature REAL NOT NULL,
+  max_tokens INTEGER NOT NULL
+);
+CREATE TABLE profiles (
+  sync_id TEXT PRIMARY KEY,
+  summary_zh TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+  model TEXT NOT NULL,
+  source_hash TEXT NOT NULL,
+  error TEXT NOT NULL
+);
+CREATE TABLE profile_use_cases (
+  sync_id TEXT NOT NULL REFERENCES profiles(sync_id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  use_case_zh TEXT NOT NULL,
+  PRIMARY KEY (sync_id, position)
+);
+CREATE TABLE skills (
+  sync_id TEXT PRIMARY KEY,
+  enabled INTEGER NOT NULL,
+  target_name TEXT NOT NULL,
+  note TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  clone_url TEXT NOT NULL,
+  subpath TEXT NOT NULL,
+  ref TEXT NOT NULL
+);
+CREATE TABLE skill_previous_target_names (
+  sync_id TEXT NOT NULL REFERENCES skills(sync_id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  target_name TEXT NOT NULL,
+  PRIMARY KEY (sync_id, position),
+  UNIQUE (sync_id, target_name)
+);
+CREATE TABLE skill_tags (
+  sync_id TEXT NOT NULL REFERENCES skills(sync_id) ON DELETE CASCADE,
+  tag TEXT NOT NULL,
+  PRIMARY KEY (sync_id, tag)
+);`

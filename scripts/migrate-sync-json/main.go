@@ -238,12 +238,11 @@ func compareSyncDocuments(source, database skillmgr.SyncDocument) error {
 }
 
 func effectiveProfiles(document skillmgr.SyncDocument) map[string]skillmgr.SkillProfile {
-	profiles := make(map[string]skillmgr.SkillProfile, len(document.Profiles))
-	for syncID, profile := range document.Profiles {
-		profiles[syncID] = profile
-	}
+	profiles := make(map[string]skillmgr.SkillProfile, len(document.Skills))
 	for syncID, record := range document.Skills {
-		if _, exists := profiles[syncID]; !exists && record.Profile != nil {
+		if profile, exists := document.Profiles[syncID]; exists {
+			profiles[syncID] = profile
+		} else if record.Profile != nil {
 			profiles[syncID] = *record.Profile
 		}
 	}
