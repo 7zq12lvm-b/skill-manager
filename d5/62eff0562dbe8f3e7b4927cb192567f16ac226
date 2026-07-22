@@ -1,0 +1,33 @@
+internal/sync_store_test.go
+  s_1e34b4f2c076f0::t_30dfbe20914586 175,187-188,219-223
+  s_1e34b4f2c076f0::t_3fec583f1c75d2 240-335,467-519
+  s_1e34b4f2c076f0::t_5be60240b48e53 436
+scripts/migrate-sync-json/main.go
+  s_1e34b4f2c076f0::t_2e315703786bf9 241,243-245
+internal/sync_store.go
+  s_1e34b4f2c076f0::t_ed561fb907e5e3 285-289,291-293
+  s_1e34b4f2c076f0::t_c9984bff37ccd4 182,447-455,464-467,469-470,472,475-511,513,515-521,525-527,529-530,532-535,538,544-547,550-565,578-580,582,586
+  s_1e34b4f2c076f0::t_f383174bf27565 184,186,210,619-620,623-627,648,652-653,656-669,671-673,675-681,683-686
+  s_1e34b4f2c076f0::t_8d2134a0bf2222 19,146-180
+  s_1e34b4f2c076f0::t_3db93b7906bf90 181
+  s_1e34b4f2c076f0::t_3a05a0d7bb3d94 183
+  s_1e34b4f2c076f0::t_fa59995b0101d6 185
+scripts/migrate-sync-json/main_test.go
+  s_1e34b4f2c076f0::t_2e315703786bf9 37,85,95-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "d562eff0562dbe8f3e7b4927cb192567f16ac226",
+  "prompts": {},
+  "sessions": {
+    "s_1e34b4f2c076f0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f82b0-e1e2-7173-8260-b22437bac0b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
