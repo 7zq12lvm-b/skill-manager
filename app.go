@@ -84,8 +84,9 @@ func (a *App) GetDebugLogPath() string {
 func (a *App) startup(ctx context.Context) {
 	a.debugLogf("startup begin")
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	a.ctx = ctx
+	setTrayApp(a)
+	defer a.mu.Unlock()
 	config, err := a.store.Load()
 	if err != nil {
 		a.debugLogf("load config error: %v", err)
@@ -107,8 +108,15 @@ func (a *App) startup(ctx context.Context) {
 	a.debugLogf("startup done")
 }
 
+func (a *App) domReady(ctx context.Context) {
+	setTrayApp(a)
+	startSystemTray()
+}
+
 func (a *App) shutdown(ctx context.Context) {
 	a.debugLogf("shutdown begin")
+	stopSystemTray()
+	setTrayApp(nil)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.watcher != nil {

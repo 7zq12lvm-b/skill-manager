@@ -27,7 +27,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { EventsOn } from "../wailsjs/runtime/runtime";
+import { BrowserOpenURL, EventsOn } from "../wailsjs/runtime/runtime";
 import { skillmgr } from "../wailsjs/go/models";
 import { cn } from "./lib/utils";
 import { useSkillStore } from "./store/useSkillStore";
@@ -823,7 +823,28 @@ function App() {
                       <SkillNoteCell skill={skill} onOpenEditor={(anchor) => openNoteEditor(skill.id, anchor)} />
                     </td>
                     <td className="min-w-0 overflow-hidden px-3 py-2 text-muted-foreground">
-                      <div className="truncate">{skill.sourceAlias || skill.repoId || skill.sourceId}</div>
+                      {(() => {
+                        const sourceLabel = skill.sourceAlias || skill.repoId || skill.sourceId;
+                        const sourceURL = repositoryWebsiteURL(skill.cloneUrl, skill.repoId);
+                        return sourceURL ? (
+                          <a
+                            className="inline-flex max-w-full items-center gap-1 truncate text-[var(--sm-link)] hover:underline"
+                            href={sourceURL}
+                            rel="noreferrer"
+                            title={`Open ${sourceLabel} in a browser.`}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              BrowserOpenURL(sourceURL);
+                            }}
+                          >
+                            <span className="truncate">{sourceLabel}</span>
+                            <ExternalLink aria-hidden="true" className="h-3 w-3 shrink-0" />
+                          </a>
+                        ) : (
+                          <div className="truncate">{sourceLabel}</div>
+                        );
+                      })()}
                       {skill.repoSubpath && <div className="truncate text-xs">{skill.repoSubpath}</div>}
                     </td>
                     <td className="min-w-0 overflow-hidden px-3 py-2">
@@ -3438,6 +3459,21 @@ function repositoryItemTitle(item: RepositoryPanelItem) {
   if (item.alias) return item.alias;
   if (item.repoId) return basename(item.repoId);
   return basename(item.path);
+}
+
+function repositoryWebsiteURL(cloneURL?: string, repoID?: string) {
+  const remote = (cloneURL || "").trim();
+  if (/^https?:\/\//i.test(remote)) return remote;
+
+  const scpMatch = remote.match(/^(?:[^@]+@)?([^:/]+):(.+)$/);
+  if (scpMatch) return `https://${scpMatch[1]}/${scpMatch[2].replace(/^\/+/, "")}`;
+
+  const sshMatch = remote.match(/^ssh:\/\/(?:[^@]+@)?([^/]+)\/(.+)$/i);
+  if (sshMatch) return `https://${sshMatch[1]}/${sshMatch[2]}`;
+
+  const id = (repoID || "").trim();
+  if (/^[^/\s]+\/[^/\s]+(?:\/[^/\s]+)+$/.test(id)) return `https://${id}`;
+  return "";
 }
 
 function defaultRepoFolderName(repoId: string) {

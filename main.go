@@ -18,17 +18,19 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:     "Skill Manager",
-		Width:     1280,
-		Height:    820,
-		MinWidth:  720,
-		MinHeight: 600,
-		Mac:       &mac.Options{},
+		Title:             "Skill Manager",
+		Width:             1280,
+		Height:            820,
+		MinWidth:          720,
+		MinHeight:         600,
+		HideWindowOnClose: true,
+		Mac:               &mac.Options{},
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        app.startup,
+		OnDomReady:       app.domReady,
 		OnShutdown:       app.shutdown,
 		Bind: []interface{}{
 			app,
