@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -350,6 +351,49 @@ INSERT INTO profiles VALUES(
 		t.Fatalf("unexpected migrated LLM config: %#v", document.LLM)
 	}
 
+	verifyDB, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer verifyDB.Close()
+	var version int
+	if err := verifyDB.QueryRow(`SELECT version FROM schema_meta WHERE id = 1`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != syncSchemaVersion {
+		t.Fatalf("expected schema version %d, got %d", syncSchemaVersion, version)
+	}
+}
+
+func TestSyncStoreMigratesVersionOneSchemaForStarredSkills(t *testing.T) {
+	path := filepath.Join(t.TempDir(), SyncFileName)
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemaV1 := strings.Replace(syncSchema, "VALUES(1, 2)", "VALUES(1, 1)", 1)
+	schemaV1 = strings.Replace(schemaV1, "  starred INTEGER NOT NULL DEFAULT 0,\n", "", 1)
+	if _, err := db.Exec(schemaV1); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO skills(sync_id, enabled, target_name, note, updated_at, provider, source_id, clone_url, subpath, ref)
+VALUES('git:example.com/me/repo//skills/review', 0, 'review', '', '', 'git', 'example.com/me/repo', '', 'skills/review', '')`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	document, err := NewSyncStore(path).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := document.Skills["git:example.com/me/repo//skills/review"]
+	if record.Starred {
+		t.Fatal("expected existing skills to remain unstarred after migration")
+	}
 	verifyDB, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)

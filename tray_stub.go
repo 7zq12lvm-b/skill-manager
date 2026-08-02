@@ -2,6 +2,9 @@
 
 package main
 
-func setTrayApp(*App)  {}
-func startSystemTray() {}
-func stopSystemTray()  {}
+import skillmgr "skill-manager/internal"
+
+func setTrayApp(*App)                              {}
+func startSystemTray()                             {}
+func stopSystemTray()                              {}
+func updateSystemTrayInventory(skillmgr.Inventory) {}

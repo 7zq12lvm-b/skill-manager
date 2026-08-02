@@ -16,7 +16,7 @@ import (
 
 const SyncFileName = "skillManager.db"
 
-const syncSchemaVersion = 1
+const syncSchemaVersion = 2
 
 type SyncStore struct {
 	path string
@@ -43,6 +43,7 @@ type SyncSkillRecord struct {
 	PreviousTargetNames []string      `json:"previousTargetNames,omitempty"`
 	Tags                []string      `json:"tags,omitempty"`
 	Note                string        `json:"note,omitempty"`
+	Starred             bool          `json:"starred,omitempty"`
 	Profile             *SkillProfile `json:"profile,omitempty"`
 	UpdatedAt           string        `json:"updatedAt,omitempty"`
 	Source              SyncSource    `json:"source"`
@@ -167,14 +168,15 @@ func loadProfilesTx(tx *sql.Tx, document *SyncDocument) error {
 }
 
 func loadSkillsTx(tx *sql.Tx, document *SyncDocument) error {
-	if err := visitRowsTx(tx, `SELECT sync_id, enabled, target_name, note, updated_at, provider, source_id, clone_url, subpath, ref FROM skills`, func(rows *sql.Rows) error {
+	if err := visitRowsTx(tx, `SELECT sync_id, enabled, target_name, note, starred, updated_at, provider, source_id, clone_url, subpath, ref FROM skills`, func(rows *sql.Rows) error {
 		var syncID string
-		var enabled int
+		var enabled, starred int
 		var record SyncSkillRecord
-		if err := rows.Scan(&syncID, &enabled, &record.TargetName, &record.Note, &record.UpdatedAt, &record.Source.Provider, &record.Source.ID, &record.Source.Locator.CloneURL, &record.Source.Locator.Subpath, &record.Source.Locator.Ref); err != nil {
+		if err := rows.Scan(&syncID, &enabled, &record.TargetName, &record.Note, &starred, &record.UpdatedAt, &record.Source.Provider, &record.Source.ID, &record.Source.Locator.CloneURL, &record.Source.Locator.Subpath, &record.Source.Locator.Ref); err != nil {
 			return err
 		}
 		record.Enabled = enabled != 0
+		record.Starred = starred != 0
 		document.Skills[syncID] = record
 		return nil
 	}); err != nil {
@@ -423,6 +425,13 @@ func ensureOrMigrateSchema(db *sql.DB) error {
 	if schemaErr == nil {
 		return nil
 	}
+	migrated, err := migrateVersionedSchema(db)
+	if err != nil {
+		return fmt.Errorf("migrate sync database schema: %w", err)
+	}
+	if migrated {
+		return ensureSchema(db)
+	}
 	legacy, err := isLegacySQLiteSchema(db)
 	if err != nil {
 		return fmt.Errorf("inspect sync database schema: %w", err)
@@ -434,6 +443,35 @@ func ensureOrMigrateSchema(db *sql.DB) error {
 		return fmt.Errorf("migrate legacy sync database: %w", err)
 	}
 	return ensureSchema(db)
+}
+
+func migrateVersionedSchema(db *sql.DB) (bool, error) {
+	metaColumns, err := sqliteTableColumns(db, "schema_meta")
+	if err != nil || len(metaColumns) == 0 {
+		return false, err
+	}
+	var version int
+	if err := db.QueryRow(`SELECT version FROM schema_meta WHERE id = 1`).Scan(&version); err != nil {
+		return false, err
+	}
+	if version != 1 {
+		return false, nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`ALTER TABLE skills ADD COLUMN starred INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(`UPDATE schema_meta SET version = 2 WHERE id = 1`); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func isLegacySQLiteSchema(db *sql.DB) (bool, error) {
@@ -586,7 +624,7 @@ CREATE TABLE schema_meta (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   version INTEGER NOT NULL
 );
-INSERT INTO schema_meta(id, version) VALUES(1, 1);
+INSERT INTO schema_meta(id, version) VALUES(1, 2);
 CREATE TABLE llm_config (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   base_url TEXT NOT NULL,
@@ -614,6 +652,7 @@ CREATE TABLE skills (
   enabled INTEGER NOT NULL,
   target_name TEXT NOT NULL,
   note TEXT NOT NULL,
+  starred INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL,
   provider TEXT NOT NULL,
   source_id TEXT NOT NULL,
@@ -698,11 +737,11 @@ func upsertSkillTx(tx *sql.Tx, record SyncSkillRecord) error {
 	if syncID == "" {
 		return errors.New("sync skill source is incomplete")
 	}
-	_, err := tx.Exec(`INSERT INTO skills(sync_id, enabled, target_name, note, updated_at, provider, source_id, clone_url, subpath, ref)
-VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(sync_id) DO UPDATE SET enabled=excluded.enabled, target_name=excluded.target_name, note=excluded.note,
+	_, err := tx.Exec(`INSERT INTO skills(sync_id, enabled, target_name, note, starred, updated_at, provider, source_id, clone_url, subpath, ref)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(sync_id) DO UPDATE SET enabled=excluded.enabled, target_name=excluded.target_name, note=excluded.note, starred=excluded.starred,
 updated_at=excluded.updated_at, provider=excluded.provider, source_id=excluded.source_id, clone_url=excluded.clone_url,
-subpath=excluded.subpath, ref=excluded.ref`, syncID, record.Enabled, record.TargetName, record.Note, record.UpdatedAt,
+subpath=excluded.subpath, ref=excluded.ref`, syncID, record.Enabled, record.TargetName, record.Note, record.Starred, record.UpdatedAt,
 		record.Source.Provider, record.Source.ID, record.Source.Locator.CloneURL, record.Source.Locator.Subpath, record.Source.Locator.Ref)
 	if err != nil {
 		return err

@@ -172,6 +172,7 @@ export namespace skillmgr {
 	    conflictSources?: ConflictSource[];
 	    tags?: string[];
 	    note?: string;
+	    starred: boolean;
 	    profile?: SkillProfile;
 	    error?: string;
 	
@@ -216,6 +217,7 @@ export namespace skillmgr {
 	        this.conflictSources = this.convertValues(source["conflictSources"], ConflictSource);
 	        this.tags = source["tags"];
 	        this.note = source["note"];
+	        this.starred = source["starred"];
 	        this.profile = this.convertValues(source["profile"], SkillProfile);
 	        this.error = source["error"];
 	    }

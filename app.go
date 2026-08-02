@@ -107,12 +107,6 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.debugLogf("startup done")
 }
-
-func (a *App) domReady(ctx context.Context) {
-	setTrayApp(a)
-	startSystemTray()
-}
-
 func (a *App) shutdown(ctx context.Context) {
 	a.debugLogf("shutdown begin")
 	stopSystemTray()
@@ -822,6 +816,31 @@ func (a *App) SaveSkillNote(skillID string, note string) (skillmgr.Inventory, er
 	return a.inventory, nil
 }
 
+func (a *App) SaveSkillStarred(skillID string, starred bool) (skillmgr.Inventory, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	skill, err := a.findSkillLocked(skillID)
+	if err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	if !skill.IsSynced {
+		return skillmgr.Inventory{}, errors.New("skill is not available in the shared catalog")
+	}
+	store := a.currentSyncStoreLocked()
+	if store == nil {
+		return skillmgr.Inventory{}, errors.New("sync folder is not configured")
+	}
+	record := syncRecordForSkill(skill, skill.DesiredEnabled != nil && *skill.DesiredEnabled)
+	record.Starred = starred
+	if err := store.UpsertSkill(record); err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	if err := a.refreshLocked(a.ctx); err != nil {
+		return skillmgr.Inventory{}, err
+	}
+	return a.inventory, nil
+}
+
 func (a *App) RemoveMissingSkill(skillID string) (skillmgr.Inventory, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -1079,6 +1098,7 @@ func (a *App) refreshLocked(ctx context.Context) error {
 		a.config = inventory.Config
 		a.inventory = inventory
 		a.inventory.SyncConfigured = false
+		updateSystemTrayInventory(a.inventory)
 		return nil
 	}
 	a.debugLogf("sync load begin path=%q", syncStore.Path())
@@ -1094,6 +1114,7 @@ func (a *App) refreshLocked(ctx context.Context) error {
 		a.inventory.SyncConfigured = true
 		a.inventory.SyncPath = syncStore.Path()
 		a.inventory.SyncError = syncErr.Error()
+		updateSystemTrayInventory(a.inventory)
 		return nil
 	}
 	if _, err := os.Stat(syncStore.Path()); errors.Is(err, os.ErrNotExist) {
@@ -1169,6 +1190,7 @@ func (a *App) refreshLocked(ctx context.Context) error {
 	a.inventory = inventory
 	a.inventory.SyncPath = syncStore.Path()
 	a.inventory.LLMConfig = syncDocument.LLM
+	updateSystemTrayInventory(a.inventory)
 	a.debugLogf("refresh done skills=%d repositories=%d sources=%d duration=%s", len(a.inventory.Skills), len(a.inventory.Repositories), len(a.inventory.Sources), time.Since(startedAt))
 	return nil
 }
@@ -1256,6 +1278,7 @@ func syncRecordForSkill(skill skillmgr.Skill, enabled bool) skillmgr.SyncSkillRe
 		PreviousTargetNames: append([]string(nil), skill.PreviousTargetNames...),
 		Tags:                append([]string(nil), skill.Tags...),
 		Note:                skill.Note,
+		Starred:             skill.Starred,
 		Profile:             cloneSkillProfileForApp(skill.Profile),
 		Source: skillmgr.SyncSource{
 			Provider: skillmgr.GitProvider,

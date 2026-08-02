@@ -562,6 +562,7 @@ func applySyncDocument(skills *[]Skill, config Config, document SyncDocument, sc
 			Ref:                 record.Source.Locator.Ref,
 			Tags:                append([]string(nil), record.Tags...),
 			Note:                record.Note,
+			Starred:             record.Starred,
 			Profile:             cloneSkillProfile(record.Profile),
 			Error:               errorMessage,
 			LastScannedAt:       scannedAt,
@@ -582,6 +583,7 @@ func applySyncRecordToSkill(skill *Skill, syncID string, record SyncSkillRecord,
 	skill.PreviousTargetNames = append([]string(nil), record.PreviousTargetNames...)
 	skill.Tags = append([]string(nil), record.Tags...)
 	skill.Note = record.Note
+	skill.Starred = record.Starred
 	skill.Profile = cloneSkillProfile(record.Profile)
 	skill.RefMismatch = record.Source.Locator.Ref != "" && currentRef != "" && currentRef != record.Source.Locator.Ref
 	skill.Ref = record.Source.Locator.Ref
