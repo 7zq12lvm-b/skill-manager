@@ -1237,6 +1237,17 @@ function RepositoryPanel({
         </div>
       </PanelHeader>
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        <button
+          aria-label="Show skills from all sources"
+          title="Clear the source filter and show skills from every repository."
+          className={cn(
+            "source-card source-card--all w-full rounded-md border p-3 text-left text-sm",
+            selectedSourceId === "all" && "source-card--selected border-blue-300 bg-blue-50",
+          )}
+          onClick={() => onSelect("all")}
+        >
+          All Sources
+        </button>
         {repositories.map((source) => (
           <div
             key={repositoryItemId(source)}
@@ -1319,17 +1330,6 @@ function RepositoryPanel({
             )}
           </div>
         ))}
-        <button
-          aria-label="Show skills from all sources"
-          title="Clear the source filter and show skills from every repository."
-          className={cn(
-            "source-card source-card--all w-full rounded-md border p-3 text-left text-sm",
-            selectedSourceId === "all" && "source-card--selected border-blue-300 bg-blue-50",
-          )}
-          onClick={() => onSelect("all")}
-        >
-          All Sources
-        </button>
       </div>
     </aside>
   );
