@@ -206,6 +206,7 @@ type Skill struct {
 	ConflictSources     []ConflictSource `json:"conflictSources,omitempty"`
 	Tags                []string         `json:"tags,omitempty"`
 	Note                string           `json:"note,omitempty"`
+	Starred             bool             `json:"starred"`
 	Profile             *SkillProfile    `json:"profile,omitempty"`
 	Error               string           `json:"error,omitempty"`
 }

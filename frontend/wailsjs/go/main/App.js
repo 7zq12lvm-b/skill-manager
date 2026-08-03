@@ -146,6 +146,10 @@ export function SaveSkillNote(arg1, arg2) {
   return window['go']['main']['App']['SaveSkillNote'](arg1, arg2);
 }
 
+export function SaveSkillStarred(arg1, arg2) {
+  return window['go']['main']['App']['SaveSkillStarred'](arg1, arg2);
+}
+
 export function SaveSkillTags(arg1, arg2) {
   return window['go']['main']['App']['SaveSkillTags'](arg1, arg2);
 }

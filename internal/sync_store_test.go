@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -120,6 +121,66 @@ func TestSyncStoreUpsertSkillsWritesMultipleRecords(t *testing.T) {
 	}
 	if names := document.Skills["git:example.com/me/repo//skills/review"].PreviousTargetNames; len(names) != 2 || names[0] != "old-a" || names[1] != "old-z" {
 		t.Fatalf("expected normalized previous target names, got %#v", names)
+	}
+}
+
+func TestSyncStorePersistsStarredSkills(t *testing.T) {
+	store := NewSyncStore(filepath.Join(t.TempDir(), SyncFileName))
+	syncID := "git:example.com/me/repo//skills/review"
+	if err := store.UpsertSkill(SyncSkillRecord{
+		Starred: true,
+		Source:  SyncSource{Provider: GitProvider, ID: "example.com/me/repo", Locator: SourceLocator{Subpath: "skills/review"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	document, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !document.Skills[syncID].Starred {
+		t.Fatal("expected starred skill to remain starred after reload")
+	}
+}
+
+func TestSyncStoreMigratesCompactVersionTwoSchemaForStarredSkills(t *testing.T) {
+	path := filepath.Join(t.TempDir(), SyncFileName)
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemaV2 := strings.Replace(syncSchema, "  starred INTEGER NOT NULL DEFAULT 0,\n", "", 1)
+	schemaV2 = strings.Replace(schemaV2, "PRAGMA user_version = 3", "PRAGMA user_version = 2", 1)
+	if _, err := db.Exec(schemaV2); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO skills(sync_id, enabled, target_name, previous_target_names_json, tags_json, note, updated_at, provider, source_id, clone_url, subpath, ref)
+VALUES('git:example.com/me/repo//skills/review', 0, 'review', '[]', '[]', '', '', 'git', 'example.com/me/repo', '', 'skills/review', '')`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	document, err := NewSyncStore(path).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.Skills["git:example.com/me/repo//skills/review"].Starred {
+		t.Fatal("expected migrated skill to default to unstarred")
+	}
+	verifyDB, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer verifyDB.Close()
+	var version int
+	if err := verifyDB.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != syncSchemaVersion {
+		t.Fatalf("expected user_version %d, got %d", syncSchemaVersion, version)
 	}
 }
 
@@ -296,8 +357,8 @@ func TestSyncStoreMigratesLegacySchemaToJSONColumns(t *testing.T) {
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 2 {
-		t.Fatalf("expected user_version 2, got %d", version)
+	if version != syncSchemaVersion {
+		t.Fatalf("expected user_version %d, got %d", syncSchemaVersion, version)
 	}
 	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`)
 	if err != nil {

@@ -201,6 +201,46 @@ func TestSaveSkillNotePreservesSharedRecord(t *testing.T) {
 	}
 }
 
+func TestSaveSkillStarredIsIndependentFromEnabledState(t *testing.T) {
+	root := t.TempDir()
+	syncFolder := filepath.Join(root, "sync")
+	disabled := false
+	skill := skillmgr.Skill{
+		ID:             "git:example.com/me/repo//skills/review",
+		SyncID:         "git:example.com/me/repo//skills/review",
+		Name:           "review",
+		TargetName:     "review",
+		RepoID:         "example.com/me/repo",
+		RepoSubpath:    "skills/review",
+		IsSynced:       true,
+		DesiredEnabled: &disabled,
+	}
+	app := &App{
+		ctx:       context.Background(),
+		store:     skillmgr.NewConfigStore(filepath.Join(root, "config.json")),
+		service:   skillmgr.NewService(),
+		config:    skillmgr.Config{Sync: skillmgr.SyncConfig{Folder: syncFolder}},
+		inventory: skillmgr.Inventory{Skills: []skillmgr.Skill{skill}},
+	}
+	store := skillmgr.NewSyncStore(skillmgr.SyncPathFromFolder(syncFolder))
+	if err := store.UpsertSkill(skillmgr.SyncSkillRecord{
+		Source: skillmgr.SyncSource{Provider: skillmgr.GitProvider, ID: skill.RepoID, Locator: skillmgr.SourceLocator{Subpath: skill.RepoSubpath}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.SaveSkillStarred(skill.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	document, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := document.Skills[skill.SyncID]
+	if !record.Starred || record.Enabled {
+		t.Fatalf("expected a starred but disabled skill, got %#v", record)
+	}
+}
+
 func TestRemoveMissingSkillRequiresInstalledRepositoryAndCleansManagedLink(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")

@@ -74,6 +74,8 @@ export function SaveSkillEnvFile(arg1:string,arg2:string):Promise<skillmgr.Inven
 
 export function SaveSkillNote(arg1:string,arg2:string):Promise<skillmgr.Inventory>;
 
+export function SaveSkillStarred(arg1:string,arg2:boolean):Promise<skillmgr.Inventory>;
+
 export function SaveSkillTags(arg1:string,arg2:Array<string>):Promise<skillmgr.Inventory>;
 
 export function UseExistingRepository(arg1:string,arg2:string):Promise<skillmgr.Inventory>;

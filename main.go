@@ -15,15 +15,18 @@ var assets embed.FS
 func main() {
 	// Create an instance of the app structure
 	app := NewApp()
+	setTrayApp(app)
+	startSystemTray()
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:     "Skill Manager",
-		Width:     1280,
-		Height:    820,
-		MinWidth:  720,
-		MinHeight: 600,
-		Mac:       &mac.Options{},
+		Title:             "Skill Manager",
+		Width:             1280,
+		Height:            820,
+		MinWidth:          720,
+		MinHeight:         600,
+		HideWindowOnClose: true,
+		Mac:               &mac.Options{},
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

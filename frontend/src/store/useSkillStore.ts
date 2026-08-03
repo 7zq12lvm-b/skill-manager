@@ -34,6 +34,7 @@ import {
   SaveLLMConfig,
   SaveSkillEnvFile,
   SaveSkillNote,
+  SaveSkillStarred,
   SaveSkillTags,
   UseExistingRepository,
 } from "../../wailsjs/go/main/App";
@@ -75,6 +76,7 @@ type SkillStore = {
   readSkillEnv: (skillId: string) => Promise<string>;
   saveSkillEnv: (skillId: string, content: string) => Promise<void>;
   saveSkillNote: (skillId: string, note: string) => Promise<void>;
+  saveSkillStarred: (skillId: string, starred: boolean) => Promise<void>;
   saveSkillTags: (skillId: string, tags: string[]) => Promise<void>;
   addSkillTags: (skillIds: string[], tags: string[]) => Promise<void>;
   removeMissingSkill: (skillId: string) => Promise<void>;
@@ -338,6 +340,16 @@ export const useSkillStore = create<SkillStore>((set, get) => ({
     set({ error: undefined });
     try {
       const inventory = await SaveSkillNote(skillId, note);
+      get().setInventory(inventory);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+  },
+  saveSkillStarred: async (skillId, starred) => {
+    set({ error: undefined });
+    try {
+      const inventory = await SaveSkillStarred(skillId, starred);
       get().setInventory(inventory);
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });

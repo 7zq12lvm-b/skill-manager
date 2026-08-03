@@ -16,7 +16,7 @@ import (
 
 const SyncFileName = "skillManager.db"
 
-const syncSchemaVersion = 2
+const syncSchemaVersion = 3
 
 type SyncStore struct {
 	path string
@@ -43,6 +43,7 @@ type SyncSkillRecord struct {
 	PreviousTargetNames []string      `json:"previousTargetNames,omitempty"`
 	Tags                []string      `json:"tags,omitempty"`
 	Note                string        `json:"note,omitempty"`
+	Starred             bool          `json:"starred,omitempty"`
 	Profile             *SkillProfile `json:"profile,omitempty"`
 	UpdatedAt           string        `json:"updatedAt,omitempty"`
 	Source              SyncSource    `json:"source"`
@@ -160,11 +161,11 @@ func loadProfilesTx(tx *sql.Tx, document *SyncDocument) error {
 }
 
 func loadSkillsTx(tx *sql.Tx, document *SyncDocument) error {
-	return visitRowsTx(tx, `SELECT sync_id, enabled, target_name, previous_target_names_json, tags_json, note, updated_at, provider, source_id, clone_url, subpath, ref FROM skills`, func(rows *sql.Rows) error {
+	return visitRowsTx(tx, `SELECT sync_id, enabled, target_name, previous_target_names_json, tags_json, note, starred, updated_at, provider, source_id, clone_url, subpath, ref FROM skills`, func(rows *sql.Rows) error {
 		var syncID, previousTargetNamesJSON, tagsJSON string
-		var enabled int
+		var enabled, starred int
 		var record SyncSkillRecord
-		if err := rows.Scan(&syncID, &enabled, &record.TargetName, &previousTargetNamesJSON, &tagsJSON, &record.Note, &record.UpdatedAt, &record.Source.Provider, &record.Source.ID, &record.Source.Locator.CloneURL, &record.Source.Locator.Subpath, &record.Source.Locator.Ref); err != nil {
+		if err := rows.Scan(&syncID, &enabled, &record.TargetName, &previousTargetNamesJSON, &tagsJSON, &record.Note, &starred, &record.UpdatedAt, &record.Source.Provider, &record.Source.ID, &record.Source.Locator.CloneURL, &record.Source.Locator.Subpath, &record.Source.Locator.Ref); err != nil {
 			return err
 		}
 		previousTargetNames, err := decodeStringList(previousTargetNamesJSON)
@@ -176,6 +177,7 @@ func loadSkillsTx(tx *sql.Tx, document *SyncDocument) error {
 			return fmt.Errorf("decode tags for %s: %w", syncID, err)
 		}
 		record.Enabled = enabled != 0
+		record.Starred = starred != 0
 		record.PreviousTargetNames = previousTargetNames
 		record.Tags = tags
 		document.Skills[syncID] = record
@@ -207,15 +209,25 @@ func loadLegacyProfilesTx(tx *sql.Tx, document *SyncDocument) error {
 	})
 }
 
-func loadLegacySkillsTx(tx *sql.Tx, document *SyncDocument) error {
-	if err := visitRowsTx(tx, `SELECT sync_id, enabled, target_name, note, updated_at, provider, source_id, clone_url, subpath, ref FROM skills`, func(rows *sql.Rows) error {
+func loadLegacySkillsTx(tx *sql.Tx, document *SyncDocument, hasStarred bool) error {
+	columns := `sync_id, enabled, target_name, note, updated_at, provider, source_id, clone_url, subpath, ref`
+	if hasStarred {
+		columns = `sync_id, enabled, target_name, note, starred, updated_at, provider, source_id, clone_url, subpath, ref`
+	}
+	if err := visitRowsTx(tx, `SELECT `+columns+` FROM skills`, func(rows *sql.Rows) error {
 		var syncID string
-		var enabled int
+		var enabled, starred int
 		var record SyncSkillRecord
-		if err := rows.Scan(&syncID, &enabled, &record.TargetName, &record.Note, &record.UpdatedAt, &record.Source.Provider, &record.Source.ID, &record.Source.Locator.CloneURL, &record.Source.Locator.Subpath, &record.Source.Locator.Ref); err != nil {
+		values := []any{&syncID, &enabled, &record.TargetName, &record.Note}
+		if hasStarred {
+			values = append(values, &starred)
+		}
+		values = append(values, &record.UpdatedAt, &record.Source.Provider, &record.Source.ID, &record.Source.Locator.CloneURL, &record.Source.Locator.Subpath, &record.Source.Locator.Ref)
+		if err := rows.Scan(values...); err != nil {
 			return err
 		}
 		record.Enabled = enabled != 0
+		record.Starred = starred != 0
 		document.Skills[syncID] = record
 		return nil
 	}); err != nil {
@@ -488,6 +500,7 @@ CREATE TABLE skills (
   previous_target_names_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(previous_target_names_json) AND json_type(previous_target_names_json) = 'array'),
   tags_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(tags_json) AND json_type(tags_json) = 'array'),
   note TEXT NOT NULL,
+  starred INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL,
   provider TEXT NOT NULL,
   source_id TEXT NOT NULL,
@@ -505,7 +518,7 @@ CREATE TABLE profiles (
   source_hash TEXT NOT NULL,
   error TEXT NOT NULL
 );
-PRAGMA user_version = 2;`
+PRAGMA user_version = 3;`
 
 func prepareSyncDatabase(db *sql.DB) error {
 	version, legacy, err := inspectSyncSchemaVersion(db)
@@ -515,11 +528,28 @@ func prepareSyncDatabase(db *sql.DB) error {
 	switch {
 	case !legacy && version == syncSchemaVersion:
 		return nil
-	case legacy && version == 1:
-		return migrateLegacySyncDatabase(db)
+	case !legacy && version == 2:
+		return migrateCompactSyncDatabaseV2(db)
+	case legacy && (version == 1 || version == 2):
+		return migrateLegacySyncDatabase(db, version == 2)
 	default:
 		return fmt.Errorf("unsupported sync database schema version %d; expected %d", version, syncSchemaVersion)
 	}
+}
+
+func migrateCompactSyncDatabaseV2(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`ALTER TABLE skills ADD COLUMN starred INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`PRAGMA user_version = 3`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func inspectSyncSchemaVersion(db *sql.DB) (version int, legacy bool, err error) {
@@ -535,7 +565,7 @@ func inspectSyncSchemaVersion(db *sql.DB) (version int, legacy bool, err error) 
 	return version, true, nil
 }
 
-func migrateLegacySyncDatabase(db *sql.DB) error {
+func migrateLegacySyncDatabase(db *sql.DB, hasStarred bool) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -550,7 +580,7 @@ func migrateLegacySyncDatabase(db *sql.DB) error {
 	if err := loadLegacyProfilesTx(tx, &document); err != nil {
 		return err
 	}
-	if err := loadLegacySkillsTx(tx, &document); err != nil {
+	if err := loadLegacySkillsTx(tx, &document, hasStarred); err != nil {
 		return err
 	}
 
@@ -653,13 +683,13 @@ func upsertSkillTx(tx *sql.Tx, record SyncSkillRecord) error {
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(`INSERT INTO skills(sync_id, enabled, target_name, previous_target_names_json, tags_json, note, updated_at, provider, source_id, clone_url, subpath, ref)
-VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err = tx.Exec(`INSERT INTO skills(sync_id, enabled, target_name, previous_target_names_json, tags_json, note, starred, updated_at, provider, source_id, clone_url, subpath, ref)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(sync_id) DO UPDATE SET enabled=excluded.enabled, target_name=excluded.target_name,
-previous_target_names_json=excluded.previous_target_names_json, tags_json=excluded.tags_json, note=excluded.note,
+previous_target_names_json=excluded.previous_target_names_json, tags_json=excluded.tags_json, note=excluded.note, starred=excluded.starred,
 updated_at=excluded.updated_at, provider=excluded.provider, source_id=excluded.source_id, clone_url=excluded.clone_url,
 subpath=excluded.subpath, ref=excluded.ref`, syncID, record.Enabled, record.TargetName, previousTargetNamesJSON, tagsJSON,
-		record.Note, record.UpdatedAt, record.Source.Provider, record.Source.ID, record.Source.Locator.CloneURL,
+		record.Note, record.Starred, record.UpdatedAt, record.Source.Provider, record.Source.ID, record.Source.Locator.CloneURL,
 		record.Source.Locator.Subpath, record.Source.Locator.Ref)
 	return err
 }

@@ -22,12 +22,13 @@ import {
   Settings,
   SlidersHorizontal,
   SquareTerminal,
+  Star,
   StickyNote,
   Tag,
   Trash2,
   X,
 } from "lucide-react";
-import { EventsOn } from "../wailsjs/runtime/runtime";
+import { BrowserOpenURL, EventsOn } from "../wailsjs/runtime/runtime";
 import { skillmgr } from "../wailsjs/go/models";
 import { cn } from "./lib/utils";
 import { useSkillStore } from "./store/useSkillStore";
@@ -137,6 +138,7 @@ function App() {
     readSkillEnv,
     saveSkillEnv,
     saveSkillNote,
+    saveSkillStarred,
     saveSkillTags,
     addSkillTags,
     removeMissingSkill,
@@ -168,6 +170,7 @@ function App() {
   const [skillColumnWidths, setSkillColumnWidths] = useState(readStoredSkillColumnWidths);
   const [generatingProfileIds, setGeneratingProfileIds] = useState<Set<string>>(() => new Set());
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [starredOnly, setStarredOnly] = useState(false);
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(() => new Set());
   const [tagPicker, setTagPicker] = useState<TagPickerState>();
   const [noteEditor, setNoteEditor] = useState<NoteEditorState>();
@@ -176,6 +179,7 @@ function App() {
   const [compactView, setCompactView] = useState<CompactView>("skills");
   const skillsTableRef = useRef<HTMLDivElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
+  const skillSearchRef = useRef<HTMLInputElement>(null);
   const requestedProfilesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -185,6 +189,18 @@ function App() {
     });
     return unsubscribe;
   }, [load, setInventory]);
+
+  useEffect(() => {
+    const unsubscribe = EventsOn("tray:search", () => {
+      setSelectedSourceId("all");
+      setStatusFilter("all");
+      setSelectedTags([]);
+      setStarredOnly(false);
+      setQuery("");
+      requestAnimationFrame(() => skillSearchRef.current?.focus());
+    });
+    return unsubscribe;
+  }, [setQuery, setSelectedSourceId, setStatusFilter]);
 
   useEffect(() => {
     localStorage.setItem(SOURCE_WIDTH_KEY, String(sourcePanelWidth));
@@ -218,6 +234,10 @@ function App() {
   }, [allTags, selectedTags.length]);
 
   const selectedTagSet = useMemo(() => new Set(selectedTags), [selectedTags]);
+  const starredSkillCount = useMemo(
+    () => (inventory?.skills ?? []).filter((skill) => skill.starred).length,
+    [inventory?.skills],
+  );
 
   const filteredSkills = useMemo(() => {
     const skills = inventory?.skills ?? [];
@@ -227,6 +247,7 @@ function App() {
         selectedSourceId === "all" || skill.sourceKey === selectedSourceId || skill.sourceId === selectedSourceId || skill.repoId === selectedSourceId;
       const matchesStatus = statusFilter === "all" || skill.status === statusFilter;
       const matchesTags = selectedTagSet.size === 0 || (skill.tags ?? []).some((tag) => selectedTagSet.has(tag));
+      const matchesStarred = !starredOnly || skill.starred;
       const matchesQuery =
         normalizedQuery.length === 0 ||
         skill.name.toLowerCase().includes(normalizedQuery) ||
@@ -234,9 +255,9 @@ function App() {
         (skill.repoSubpath ?? "").toLowerCase().includes(normalizedQuery) ||
         skill.sourcePath.toLowerCase().includes(normalizedQuery) ||
         (skill.tags ?? []).some((tag) => tag.toLowerCase().includes(normalizedQuery));
-      return matchesSource && matchesStatus && matchesQuery && matchesTags;
+      return matchesSource && matchesStatus && matchesQuery && matchesTags && matchesStarred;
     });
-  }, [inventory?.skills, query, selectedSourceId, selectedTagSet, statusFilter]);
+  }, [inventory?.skills, query, selectedSourceId, selectedTagSet, starredOnly, statusFilter]);
 
   const selectedSkill =
     filteredSkills.find((skill) => skill.id === selectedSkillId) ??
@@ -670,6 +691,7 @@ function App() {
                   aria-label="Search skills"
                   autoComplete="off"
                   name="skill-search"
+                  ref={skillSearchRef}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search Skill…"
@@ -709,6 +731,21 @@ function App() {
                   </option>
                 ))}
               </select>
+              <button
+                aria-pressed={starredOnly}
+                className={cn(
+                  "starred-filter-button inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition",
+                  starredOnly
+                    ? "border-amber-400 bg-amber-50 text-amber-800"
+                    : "border-input bg-white text-slate-600 hover:bg-amber-50 hover:text-amber-800",
+                )}
+                onClick={() => setStarredOnly((current) => !current)}
+                title={starredOnly ? "Show all skills again." : "Show only starred skills."}
+                type="button"
+              >
+                <Star aria-hidden="true" className={cn("h-4 w-4", starredOnly && "fill-amber-400")} />
+                Starred ({starredSkillCount})
+              </button>
             </div>
             {allTags.length > 0 && (
               <div className="tag-filter-strip mt-3 flex min-w-0 flex-wrap gap-1.5">
@@ -808,9 +845,31 @@ function App() {
                       />
                     </td>
                     <td className="min-w-0 overflow-hidden px-3 py-2">
-                      <div className="truncate font-medium">{skill.displayName || skill.name}</div>
-                      <div className="truncate text-xs text-muted-foreground">
-                        {skill.description || skill.repoSubpath || "No summary yet"}
+                      <div className="flex min-w-0 items-start gap-2">
+                        <button
+                          aria-label={`${skill.starred ? "Remove star from" : "Star"} ${skill.displayName || skill.name}`}
+                          aria-pressed={skill.starred}
+                          className={cn(
+                            "mt-0.5 shrink-0 rounded p-0.5 transition hover:bg-amber-100",
+                            skill.starred ? "text-amber-500" : "text-slate-300 hover:text-amber-500",
+                          )}
+                          disabled={loading || !skill.syncId}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void saveSkillStarred(skill.id, !skill.starred).catch(() => undefined);
+                          }}
+                          onKeyDown={(event) => event.stopPropagation()}
+                          title={skill.syncId ? (skill.starred ? "Remove from starred skills." : "Add to starred skills.") : "Configure sync before starring this skill."}
+                          type="button"
+                        >
+                          <Star aria-hidden="true" className={cn("h-4 w-4", skill.starred && "fill-current")} />
+                        </button>
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">{skill.displayName || skill.name}</div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {skill.description || skill.repoSubpath || "No summary yet"}
+                          </div>
+                        </div>
                       </div>
                     </td>
                     <td className="min-w-0 px-3 py-2">
@@ -823,7 +882,28 @@ function App() {
                       <SkillNoteCell skill={skill} onOpenEditor={(anchor) => openNoteEditor(skill.id, anchor)} />
                     </td>
                     <td className="min-w-0 overflow-hidden px-3 py-2 text-muted-foreground">
-                      <div className="truncate">{skill.sourceAlias || skill.repoId || skill.sourceId}</div>
+                      {(() => {
+                        const sourceLabel = skill.sourceAlias || skill.repoId || skill.sourceId;
+                        const sourceURL = repositoryWebsiteURL(skill.cloneUrl, skill.repoId);
+                        return sourceURL ? (
+                          <a
+                            className="inline-flex max-w-full items-center gap-1 truncate text-[var(--sm-link)] hover:underline"
+                            href={sourceURL}
+                            rel="noreferrer"
+                            title={`Open ${sourceLabel} in a browser.`}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              BrowserOpenURL(sourceURL);
+                            }}
+                          >
+                            <span className="truncate">{sourceLabel}</span>
+                            <ExternalLink aria-hidden="true" className="h-3 w-3 shrink-0" />
+                          </a>
+                        ) : (
+                          <div className="truncate">{sourceLabel}</div>
+                        );
+                      })()}
                       {skill.repoSubpath && <div className="truncate text-xs">{skill.repoSubpath}</div>}
                     </td>
                     <td className="min-w-0 overflow-hidden px-3 py-2">
@@ -835,7 +915,7 @@ function App() {
             </table>
             {filteredSkills.length === 0 && (
               <div className="empty-state p-8 text-center text-sm text-muted-foreground">
-                No skills match these filters. Clear search, tags, or choose another status.
+                No skills match these filters. Clear search, tags, starred-only, or choose another status.
               </div>
             )}
           </div>
@@ -1157,6 +1237,17 @@ function RepositoryPanel({
         </div>
       </PanelHeader>
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        <button
+          aria-label="Show skills from all sources"
+          title="Clear the source filter and show skills from every repository."
+          className={cn(
+            "source-card source-card--all w-full rounded-md border p-3 text-left text-sm",
+            selectedSourceId === "all" && "source-card--selected border-blue-300 bg-blue-50",
+          )}
+          onClick={() => onSelect("all")}
+        >
+          All Sources
+        </button>
         {repositories.map((source) => (
           <div
             key={repositoryItemId(source)}
@@ -1239,17 +1330,6 @@ function RepositoryPanel({
             )}
           </div>
         ))}
-        <button
-          aria-label="Show skills from all sources"
-          title="Clear the source filter and show skills from every repository."
-          className={cn(
-            "source-card source-card--all w-full rounded-md border p-3 text-left text-sm",
-            selectedSourceId === "all" && "source-card--selected border-blue-300 bg-blue-50",
-          )}
-          onClick={() => onSelect("all")}
-        >
-          All Sources
-        </button>
       </div>
     </aside>
   );
@@ -3438,6 +3518,21 @@ function repositoryItemTitle(item: RepositoryPanelItem) {
   if (item.alias) return item.alias;
   if (item.repoId) return basename(item.repoId);
   return basename(item.path);
+}
+
+function repositoryWebsiteURL(cloneURL?: string, repoID?: string) {
+  const remote = (cloneURL || "").trim();
+  if (/^https?:\/\//i.test(remote)) return remote;
+
+  const scpMatch = remote.match(/^(?:[^@]+@)?([^:/]+):(.+)$/);
+  if (scpMatch) return `https://${scpMatch[1]}/${scpMatch[2].replace(/^\/+/, "")}`;
+
+  const sshMatch = remote.match(/^ssh:\/\/(?:[^@]+@)?([^/]+)\/(.+)$/i);
+  if (sshMatch) return `https://${sshMatch[1]}/${sshMatch[2]}`;
+
+  const id = (repoID || "").trim();
+  if (/^[^/\s]+\/[^/\s]+(?:\/[^/\s]+)+$/.test(id)) return `https://${id}`;
+  return "";
 }
 
 function defaultRepoFolderName(repoId: string) {
