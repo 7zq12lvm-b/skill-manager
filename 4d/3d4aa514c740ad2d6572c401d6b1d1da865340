@@ -1,0 +1,27 @@
+internal/sync_store_test.go
+  s_d60c1842d70508::t_c1c6ae9f90210e 8,127-186,360-361
+internal/sync_store.go
+  s_d60c1842d70508::t_8cab730c28b7a8 19,46,164,166,168,180,212-217,219,221-226,230,503,521,531-534,540-554,568,583,686-687,689,692
+frontend/wailsjs/go/main/App.js
+  s_d60c1842d70508::t_1c2597d1959403 149-152
+frontend/wailsjs/go/main/App.d.ts
+  s_d60c1842d70508::t_1c2597d1959403 77-78
+frontend/wailsjs/go/models.ts
+  s_d60c1842d70508::t_1c2597d1959403 175,220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "4d3d4aa514c740ad2d6572c401d6b1d1da865340",
+  "prompts": {},
+  "sessions": {
+    "s_d60c1842d70508": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc5c2-c45c-78d2-80c9-acd9d8d1bf81",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
