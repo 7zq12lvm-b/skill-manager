@@ -54,6 +54,10 @@ export function EnableSkills(arg1) {
   return window['go']['main']['App']['EnableSkills'](arg1);
 }
 
+export function ExportSkill(arg1, arg2) {
+  return window['go']['main']['App']['ExportSkill'](arg1, arg2);
+}
+
 export function GenerateSkillProfile(arg1, arg2) {
   return window['go']['main']['App']['GenerateSkillProfile'](arg1, arg2);
 }

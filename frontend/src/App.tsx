@@ -30,6 +30,8 @@ import {
 } from "lucide-react";
 import { BrowserOpenURL, EventsOn } from "../wailsjs/runtime/runtime";
 import { skillmgr } from "../wailsjs/go/models";
+import { ExportSkill } from "../wailsjs/go/main/App";
+import { SkillExportMenu } from "./components/SkillExportMenu";
 import { cn } from "./lib/utils";
 import { useSkillStore } from "./store/useSkillStore";
 import logoUniversal from "./assets/images/logo-universal.png";
@@ -154,6 +156,28 @@ function App() {
     setQuery,
     clearError,
   } = useSkillStore();
+  const [exportMenu, setExportMenu] = useState<{ skill: skillmgr.Skill; x: number; y: number; trigger: HTMLElement }>();
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState("");
+  const closeExportMenu = () => {
+    exportMenu?.trigger.focus();
+    setExportMenu(undefined);
+  };
+  const exportSkill = async (format: "zip" | "skill") => {
+    if (!exportMenu || exporting) return;
+    const skill = exportMenu.skill;
+    closeExportMenu();
+    setExporting(true);
+    setExportMessage("");
+    try {
+      const path = await ExportSkill(skill.id, format);
+      if (path) setExportMessage(`已导出：${path}`);
+    } catch (error) {
+      useSkillStore.setState({ error: `导出失败：${String(error)}` });
+    } finally {
+      setExporting(false);
+    }
+  };
   const [addSourceOpen, setAddSourceOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sourceToEdit, setSourceToEdit] = useState<RepositoryPanelItem>();
@@ -579,6 +603,22 @@ function App() {
         </div>
       )}
 
+      {exportMenu && (
+        <SkillExportMenu
+          x={exportMenu.x}
+          y={exportMenu.y}
+          unavailable={!exportMenu.skill.sourcePath || exportMenu.skill.status === "missing-source"}
+          onClose={closeExportMenu}
+          onExport={(format) => void exportSkill(format)}
+        />
+      )}
+      {exportMessage && (
+        <div role="status" className="flex items-center justify-between gap-3 border-b border-border bg-blue-50 px-5 py-2 text-sm">
+          <span className="min-w-0 break-all">{exportMessage}</span>
+          <button type="button" aria-label="关闭导出提示" className="shrink-0 rounded p-1 hover:bg-blue-100" onClick={() => setExportMessage("")}><X className="h-4 w-4" /></button>
+        </div>
+      )}
+      {exporting && <LoadingOverlay label="正在导出 Skill…" />}
       {loading && <LoadingOverlay label={loadingLabel || "Working..."} />}
 
       {workbenchLayout === "compact" && (
@@ -814,8 +854,19 @@ function App() {
                       "skill-row cursor-pointer border-b border-border bg-white hover:bg-blue-50/50",
                       selectedSkill?.id === skill.id && "skill-row--selected bg-blue-50",
                     )}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      if (!exporting) setExportMenu({ skill, x: event.clientX, y: event.clientY, trigger: event.currentTarget });
+                    }}
+                    aria-haspopup="menu"
                     onClick={() => selectSkillWithProfile(skill)}
                     onKeyDown={(event) => {
+                      if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                        event.preventDefault();
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        if (!exporting) setExportMenu({ skill, x: rect.left, y: rect.bottom, trigger: event.currentTarget });
+                        return;
+                      }
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
                         selectSkillWithProfile(skill);

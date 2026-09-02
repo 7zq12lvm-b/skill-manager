@@ -28,6 +28,8 @@ export function EnableSkill(arg1:string):Promise<skillmgr.Inventory>;
 
 export function EnableSkills(arg1:Array<string>):Promise<skillmgr.BulkEnableResult>;
 
+export function ExportSkill(arg1:string,arg2:string):Promise<string>;
+
 export function GenerateSkillProfile(arg1:string,arg2:boolean):Promise<skillmgr.SkillProfileResult>;
 
 export function GetDebugLogPath():Promise<string>;
