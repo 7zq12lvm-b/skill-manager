@@ -367,6 +367,7 @@ func (a *App) SaveConfig(config skillmgr.Config) (skillmgr.Inventory, error) {
 	if strings.TrimSpace(config.Sync.Folder) == "" {
 		return skillmgr.Inventory{}, errors.New("sync folder is required")
 	}
+	config.SkillEnabled = a.config.SkillEnabled
 	a.config = config
 	if err := a.persistAndRefreshLocked(); err != nil {
 		return skillmgr.Inventory{}, err
@@ -500,8 +501,7 @@ func (a *App) EnableSkill(skillID string) (skillmgr.Inventory, error) {
 	if store == nil || !skill.IsSynced {
 		return skillmgr.Inventory{}, errors.New("skill is not available in the shared catalog")
 	}
-	record := syncRecordForSkill(skill, true)
-	if err := store.UpsertSkill(record); err != nil {
+	if err := a.saveSkillEnabledLocked(skill, true); err != nil {
 		return skillmgr.Inventory{}, err
 	}
 	if err := a.service.Enable(a.ctx, a.config, skill); err != nil {
@@ -521,7 +521,6 @@ func (a *App) EnableSkills(skillIDs []string) (skillmgr.BulkEnableResult, error)
 		return skillmgr.BulkEnableResult{}, errors.New("sync folder is not configured")
 	}
 	result := skillmgr.BulkEnableResult{}
-	records := make([]skillmgr.SyncSkillRecord, 0, len(skillIDs))
 	for _, skillID := range uniqueSkillIDs(skillIDs) {
 		skill, err := a.findSkillLocked(skillID)
 		if err != nil {
@@ -542,13 +541,10 @@ func (a *App) EnableSkills(skillIDs []string) (skillmgr.BulkEnableResult, error)
 			result.Failed = append(result.Failed, skill.Name+": "+err.Error())
 			continue
 		}
-		records = append(records, syncRecordForSkill(skill, true))
-		result.Enabled++
-	}
-	if len(records) > 0 {
-		if err := store.UpsertSkills(records); err != nil {
+		if err := a.saveSkillEnabledLocked(skill, true); err != nil {
 			return skillmgr.BulkEnableResult{}, err
 		}
+		result.Enabled++
 	}
 	if err := a.refreshLocked(a.ctx); err != nil {
 		return skillmgr.BulkEnableResult{}, err
@@ -661,7 +657,7 @@ func (a *App) DisableSkill(skillID string) (skillmgr.Inventory, error) {
 	if store == nil || !skill.IsSynced {
 		return skillmgr.Inventory{}, errors.New("skill is not available in the shared catalog")
 	}
-	if err := store.UpsertSkill(syncRecordForSkill(skill, false)); err != nil {
+	if err := a.saveSkillEnabledLocked(skill, false); err != nil {
 		return skillmgr.Inventory{}, err
 	}
 	if err := a.service.Disable(a.ctx, a.config, skill); err != nil {
@@ -681,7 +677,6 @@ func (a *App) DisableSkills(skillIDs []string) (skillmgr.BulkDisableResult, erro
 		return skillmgr.BulkDisableResult{}, errors.New("sync folder is not configured")
 	}
 	result := skillmgr.BulkDisableResult{}
-	records := make([]skillmgr.SyncSkillRecord, 0, len(skillIDs))
 	for _, skillID := range uniqueSkillIDs(skillIDs) {
 		skill, err := a.findSkillLocked(skillID)
 		if err != nil {
@@ -702,13 +697,10 @@ func (a *App) DisableSkills(skillIDs []string) (skillmgr.BulkDisableResult, erro
 			result.Failed = append(result.Failed, skill.Name+": "+err.Error())
 			continue
 		}
-		records = append(records, syncRecordForSkill(skill, false))
-		result.Disabled++
-	}
-	if len(records) > 0 {
-		if err := store.UpsertSkills(records); err != nil {
+		if err := a.saveSkillEnabledLocked(skill, false); err != nil {
 			return skillmgr.BulkDisableResult{}, err
 		}
+		result.Disabled++
 	}
 	if err := a.refreshLocked(a.ctx); err != nil {
 		return skillmgr.BulkDisableResult{}, err
@@ -728,7 +720,7 @@ func (a *App) ResolveConflict(skillID string) (skillmgr.Inventory, error) {
 	if store == nil || !skill.IsSynced {
 		return skillmgr.Inventory{}, errors.New("skill is not available in the shared catalog")
 	}
-	if err := store.UpsertSkill(syncRecordForSkill(skill, true)); err != nil {
+	if err := a.saveSkillEnabledLocked(skill, true); err != nil {
 		return skillmgr.Inventory{}, err
 	}
 	if err := a.service.ResolveConflict(a.ctx, a.config, skill); err != nil {
@@ -780,7 +772,7 @@ func (a *App) SaveSkillTags(skillID string, tags []string) (skillmgr.Inventory, 
 	if store == nil {
 		return skillmgr.Inventory{}, errors.New("sync folder is not configured")
 	}
-	record := syncRecordForSkill(skill, skill.DesiredEnabled != nil && *skill.DesiredEnabled)
+	record := syncRecordForSkill(skill)
 	record.Tags = tags
 	if err := store.UpsertSkill(record); err != nil {
 		return skillmgr.Inventory{}, err
@@ -805,7 +797,7 @@ func (a *App) SaveSkillNote(skillID string, note string) (skillmgr.Inventory, er
 	if store == nil {
 		return skillmgr.Inventory{}, errors.New("sync folder is not configured")
 	}
-	record := syncRecordForSkill(skill, skill.DesiredEnabled != nil && *skill.DesiredEnabled)
+	record := syncRecordForSkill(skill)
 	record.Note = note
 	if err := store.UpsertSkill(record); err != nil {
 		return skillmgr.Inventory{}, err
@@ -830,7 +822,7 @@ func (a *App) SaveSkillStarred(skillID string, starred bool) (skillmgr.Inventory
 	if store == nil {
 		return skillmgr.Inventory{}, errors.New("sync folder is not configured")
 	}
-	record := syncRecordForSkill(skill, skill.DesiredEnabled != nil && *skill.DesiredEnabled)
+	record := syncRecordForSkill(skill)
 	record.Starred = starred
 	if err := store.UpsertSkill(record); err != nil {
 		return skillmgr.Inventory{}, err
@@ -957,7 +949,7 @@ func (a *App) AddSkillTags(skillIDs []string, tags []string) (skillmgr.BulkTagRe
 			result.Unchanged++
 			continue
 		}
-		record := syncRecordForSkill(skill, skill.DesiredEnabled != nil && *skill.DesiredEnabled)
+		record := syncRecordForSkill(skill)
 		record.Tags = merged
 		records = append(records, record)
 		result.Updated++
@@ -1128,6 +1120,30 @@ func (a *App) refreshLocked(ctx context.Context) error {
 		a.debugLogf("refresh scan error: %v duration=%s", err, time.Since(startedAt))
 		return err
 	}
+	localStateChanged := false
+	if a.config.SkillEnabled == nil {
+		a.config.SkillEnabled = map[string]bool{}
+	}
+	for _, skill := range inventory.Skills {
+		if skill.SyncID == "" {
+			continue
+		}
+		if _, exists := a.config.SkillEnabled[skill.SyncID]; exists {
+			continue
+		}
+		enabled := skill.IsActive
+		if skill.DesiredEnabled != nil {
+			enabled = *skill.DesiredEnabled
+		}
+		a.config.SkillEnabled[skill.SyncID] = enabled
+		localStateChanged = true
+	}
+	inventory.Config.SkillEnabled = a.config.SkillEnabled
+	if localStateChanged {
+		if err := a.store.Save(a.config); err != nil {
+			return err
+		}
+	}
 	seeded := false
 	for _, skill := range inventory.Skills {
 		if !skill.CanSync || skill.SyncID == "" {
@@ -1136,7 +1152,7 @@ func (a *App) refreshLocked(ctx context.Context) error {
 		if _, exists := syncDocument.Skills[skill.SyncID]; exists {
 			continue
 		}
-		record := syncRecordForSkill(skill, skill.IsActive)
+		record := syncRecordForSkill(skill)
 		record.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		syncDocument.Skills[skill.SyncID] = record
 		seeded = true
@@ -1267,13 +1283,33 @@ func (a *App) repositoryConfigFromPathLocked(ctx context.Context, path string) (
 	}, true
 }
 
-func syncRecordForSkill(skill skillmgr.Skill, enabled bool) skillmgr.SyncSkillRecord {
+// Device preferences live only in the local config, keyed by portable skill identity.
+func (a *App) saveSkillEnabledLocked(skill skillmgr.Skill, enabled bool) error {
+	id := skill.SyncID
+	if id == "" {
+		id = skill.ID
+	}
+	next := make(map[string]bool, len(a.config.SkillEnabled)+1)
+	for key, value := range a.config.SkillEnabled {
+		next[key] = value
+	}
+	next[id] = enabled
+	config := a.config
+	config.SkillEnabled = next
+	if err := a.store.Save(config); err != nil {
+		return err
+	}
+	a.config = config
+	return nil
+}
+
+func syncRecordForSkill(skill skillmgr.Skill) skillmgr.SyncSkillRecord {
 	targetName := strings.TrimSpace(skill.TargetName)
 	if targetName == "" {
 		targetName = skill.Name
 	}
 	return skillmgr.SyncSkillRecord{
-		Enabled:             enabled,
+		Enabled:             skill.LegacySharedEnabled,
 		TargetName:          targetName,
 		PreviousTargetNames: append([]string(nil), skill.PreviousTargetNames...),
 		Tags:                append([]string(nil), skill.Tags...),

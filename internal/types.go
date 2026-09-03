@@ -20,6 +20,7 @@ const (
 )
 
 type Config struct {
+	SkillEnabled     map[string]bool      `json:"skillEnabled,omitempty"`
 	Version          int                  `json:"version"`
 	TargetDirs       []string             `json:"targetDirs"`
 	Installations    []SourceInstallation `json:"installations"`
@@ -190,6 +191,7 @@ type Skill struct {
 	SymlinkTarget       string           `json:"symlinkTarget,omitempty"`
 	IsActive            bool             `json:"isActive"`
 	IsSynced            bool             `json:"-"`
+	LegacySharedEnabled bool             `json:"-"`
 	DesiredEnabled      *bool            `json:"-"`
 	CanSync             bool             `json:"-"`
 	CanRemove           bool             `json:"canRemove"`

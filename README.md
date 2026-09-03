@@ -49,3 +49,7 @@ go run ./scripts/migrate-sync-json \
 ```
 
 The command refuses to overwrite an existing destination, validates the completed database before publishing it, and leaves the source JSON unchanged.
+
+## Device-local skill switches
+
+Skill enable/disable preferences are stored in the local `config.json` under `skillEnabled`, keyed by skill sync ID. On macOS this file is at `~/Library/Application Support/skill-manager/config.json`. Existing devices initialize preferences from their actual target symlinks; new devices default to disabled. Shared catalog updates never override these preferences. Tags, notes, stars, and other catalog metadata still sync. The database `enabled` column is retained for legacy compatibility only and is ignored by this version; all devices should upgrade to use independent switches.

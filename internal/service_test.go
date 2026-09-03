@@ -682,7 +682,7 @@ func TestScanRepositoryRootSkillUsesRepositoryFolderAsTargetName(t *testing.T) {
 
 func TestScanWithSyncShowsMissingSource(t *testing.T) {
 	root := t.TempDir()
-	enabled := true
+	enabled := false
 	inventory, err := NewService().ScanWithSync(context.Background(), Config{
 		TargetDirs: []string{filepath.Join(root, "target")},
 	}, SyncDocument{Version: 2, Skills: map[string]SyncSkillRecord{
@@ -706,7 +706,7 @@ func TestScanWithSyncShowsMissingSource(t *testing.T) {
 		t.Fatal("expected a skill in an unavailable repository to require repository recovery")
 	}
 	if inventory.Skills[0].DesiredEnabled == nil || *inventory.Skills[0].DesiredEnabled != enabled {
-		t.Fatalf("expected desired enabled true, got %#v", inventory.Skills[0].DesiredEnabled)
+		t.Fatalf("expected device default disabled, got %#v", inventory.Skills[0].DesiredEnabled)
 	}
 	if inventory.Skills[0].Note != "Review risky changes first." {
 		t.Fatalf("expected note on missing skill, got %q", inventory.Skills[0].Note)

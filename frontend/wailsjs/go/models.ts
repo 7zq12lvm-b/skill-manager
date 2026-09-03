@@ -415,6 +415,7 @@ export namespace skillmgr {
 		}
 	}
 	export class Config {
+	    skillEnabled?: Record<string, boolean>;
 	    version: number;
 	    targetDirs: string[];
 	    installations: SourceInstallation[];
@@ -430,6 +431,7 @@ export namespace skillmgr {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.skillEnabled = source["skillEnabled"];
 	        this.version = source["version"];
 	        this.targetDirs = source["targetDirs"];
 	        this.installations = this.convertValues(source["installations"], SourceInstallation);

@@ -96,16 +96,17 @@ func TestBulkTagAdditionAndDisableSelectedSkills(t *testing.T) {
 	}
 	enabled := true
 	skill := skillmgr.Skill{
-		ID:             "review-id",
-		Name:           "review",
-		TargetName:     "review",
-		SourcePath:     source,
-		RepoID:         "example.com/me/repo",
-		RepoSubpath:    "skills/review",
-		IsSynced:       true,
-		IsActive:       true,
-		DesiredEnabled: &enabled,
-		Tags:           []string{"existing"},
+		ID:                  "review-id",
+		Name:                "review",
+		TargetName:          "review",
+		SourcePath:          source,
+		RepoID:              "example.com/me/repo",
+		RepoSubpath:         "skills/review",
+		IsSynced:            true,
+		IsActive:            true,
+		DesiredEnabled:      &enabled,
+		LegacySharedEnabled: true,
+		Tags:                []string{"existing"},
 	}
 	app := &App{
 		ctx:     context.Background(),
@@ -159,15 +160,16 @@ func TestSaveSkillNotePreservesSharedRecord(t *testing.T) {
 	syncFolder := filepath.Join(root, "sync")
 	enabled := true
 	skill := skillmgr.Skill{
-		ID:             "git:example.com/me/repo//skills/review",
-		SyncID:         "git:example.com/me/repo//skills/review",
-		Name:           "review",
-		TargetName:     "review",
-		RepoID:         "example.com/me/repo",
-		RepoSubpath:    "skills/review",
-		IsSynced:       true,
-		DesiredEnabled: &enabled,
-		Tags:           []string{"existing"},
+		ID:                  "git:example.com/me/repo//skills/review",
+		SyncID:              "git:example.com/me/repo//skills/review",
+		Name:                "review",
+		TargetName:          "review",
+		RepoID:              "example.com/me/repo",
+		RepoSubpath:         "skills/review",
+		IsSynced:            true,
+		DesiredEnabled:      &enabled,
+		LegacySharedEnabled: true,
+		Tags:                []string{"existing"},
 	}
 	app := &App{
 		ctx:     context.Background(),
@@ -463,4 +465,104 @@ func runAppGit(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, output)
 	}
 	return strings.TrimSpace(string(output))
+}
+
+func TestSkillSwitchesAreDeviceLocal(t *testing.T) {
+	root, pathErr := filepath.EvalSymlinks(t.TempDir())
+	if pathErr != nil {
+		t.Fatal(pathErr)
+	}
+	repo := filepath.Join(root, "repo")
+	runAppGit(t, root, "init", repo)
+	runAppGit(t, repo, "remote", "add", "origin", "https://github.com/example/local-switches.git")
+	source := filepath.Join(repo, "review")
+	if err := os.MkdirAll(source, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("---\nname: review\ndescription: Review code\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	newDevice := func(name string, active bool) *App {
+		config := skillmgr.DefaultConfig()
+		config.Scan.WatchSourceFolders = false
+		config.Sync.Folder = filepath.Join(root, "sync")
+		config.TargetDirs = []string{filepath.Join(root, name, "target")}
+		config.Repositories = []skillmgr.RepositoryConfig{{RepoID: "github.com/example/local-switches", Path: repo, Enabled: true, ScanRoots: []string{"."}}}
+		if err := os.MkdirAll(config.TargetDirs[0], 0755); err != nil {
+			t.Fatal(err)
+		}
+		if active {
+			if err := os.Symlink(source, filepath.Join(config.TargetDirs[0], "review")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		app := &App{ctx: context.Background(), config: config, store: skillmgr.NewConfigStore(filepath.Join(root, name, "config.json")), service: skillmgr.NewService()}
+		if err := app.refreshLocked(app.ctx); err != nil {
+			t.Fatal(err)
+		}
+		return app
+	}
+	a, b := newDevice("a", true), newDevice("b", false)
+	id := a.inventory.Skills[0].ID
+	check := func(app *App, want bool) {
+		t.Helper()
+		if err := app.refreshLocked(app.ctx); err != nil {
+			t.Fatal(err)
+		}
+		if len(app.inventory.Skills) != 1 || app.inventory.Skills[0].IsActive != want {
+			t.Fatalf("expected active=%v, got %#v", want, app.inventory.Skills)
+		}
+	}
+	check(a, true)
+	check(b, false)
+	store := skillmgr.NewSyncStore(skillmgr.SyncPathFromFolder(a.config.Sync.Folder))
+	before, err := os.ReadFile(store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.EnableSkills([]string{id}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.DisableSkill(id); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("switches changed shared database")
+	}
+	check(a, false)
+	check(b, true)
+	// A remote legacy switch and metadata update must not change either device.
+	doc, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := doc.Skills[id]
+	record.Enabled = true
+	record.Note = "shared note"
+	if err := store.UpsertSkill(record); err != nil {
+		t.Fatal(err)
+	}
+	check(a, false)
+	check(b, true)
+	if a.inventory.Skills[0].Note != "shared note" {
+		t.Fatal("metadata did not sync")
+	}
+	// Restart reloads the local preference, without importing the shared switch.
+	a.config, err = a.store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(a, false)
+	if _, err := b.DisableSkills([]string{id}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.EnableSkill(id); err != nil {
+		t.Fatal(err)
+	}
+	check(a, true)
+	check(b, false)
 }

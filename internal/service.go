@@ -522,9 +522,15 @@ func applySyncDocument(skills *[]Skill, config Config, document SyncDocument, sc
 		repositories[repository.RepoID] = repository
 	}
 	for id, record := range document.Skills {
-		desired := record.Enabled
+		desired, hasLocalState := config.SkillEnabled[id]
 		if index, ok := bySyncID[id]; ok {
 			skill := &(*skills)[index]
+			if !hasLocalState {
+				// Migrate the actual state of this device, never the shared flag.
+				for _, target := range inspectTargets(record.TargetName, skill.SourcePath, config.TargetDirs) {
+					desired = desired || target.IsActive
+				}
+			}
 			applySyncRecordToSkill(skill, id, record, &desired)
 			continue
 		}
@@ -557,6 +563,7 @@ func applySyncDocument(skills *[]Skill, config Config, document SyncDocument, sc
 			Status:              status,
 			IsSynced:            true,
 			DesiredEnabled:      &desired,
+			LegacySharedEnabled: record.Enabled,
 			CanSync:             true,
 			CanRemove:           canRemove,
 			Ref:                 record.Source.Locator.Ref,
@@ -578,6 +585,7 @@ func applySyncRecordToSkill(skill *Skill, syncID string, record SyncSkillRecord,
 	skill.SourceKey = PortableSourceKey(record.Source.Provider, record.Source.ID)
 	skill.IsSynced = true
 	skill.DesiredEnabled = desired
+	skill.LegacySharedEnabled = record.Enabled
 	skill.TargetName = record.TargetName
 	skill.Name = record.TargetName
 	skill.PreviousTargetNames = append([]string(nil), record.PreviousTargetNames...)
