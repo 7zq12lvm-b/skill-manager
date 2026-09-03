@@ -1,0 +1,27 @@
+app_test.go
+  s_a0236dcfc1d21b::t_3cf2cd54b74ef7 569-661
+app.go
+  s_a0236dcfc1d21b::t_fa8af332c326e1 225-229,246,249,252-253,256-258,273-336,1184-1198
+frontend/src/App.tsx
+  s_a0236dcfc1d21b::t_298e3e8aa26f11 3317,3327
+internal/sync_store.go
+  s_a0236dcfc1d21b::t_212b85536209ec 19,26-30,128-138,380-405,500-502,529,563,573-574,576-579,587-598,732-741
+internal/sync_store_test.go
+  s_a0236dcfc1d21b::t_153bdd595e3847 152,379
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "05c0e1567904c534440b926626de78cda8846fe3",
+  "prompts": {},
+  "sessions": {
+    "s_a0236dcfc1d21b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06657-d154-7eb3-be9d-6c4a00a9545e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
