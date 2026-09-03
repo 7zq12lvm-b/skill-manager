@@ -149,7 +149,7 @@ func TestSyncStoreMigratesCompactVersionTwoSchemaForStarredSkills(t *testing.T) 
 		t.Fatal(err)
 	}
 	schemaV2 := strings.Replace(syncSchema, "  starred INTEGER NOT NULL DEFAULT 0,\n", "", 1)
-	schemaV2 = strings.Replace(schemaV2, "PRAGMA user_version = 3", "PRAGMA user_version = 2", 1)
+	schemaV2 = strings.Replace(schemaV2, "PRAGMA user_version = 4", "PRAGMA user_version = 2", 1)
 	if _, err := db.Exec(schemaV2); err != nil {
 		db.Close()
 		t.Fatal(err)
@@ -376,7 +376,7 @@ func TestSyncStoreMigratesLegacySchemaToJSONColumns(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	wantTables := []string{"llm_config", "profiles", "skills"}
+	wantTables := []string{"llm_config", "profiles", "removed_repositories", "skills"}
 	if len(tables) != len(wantTables) {
 		t.Fatalf("expected compact schema tables %v, got %v", wantTables, tables)
 	}

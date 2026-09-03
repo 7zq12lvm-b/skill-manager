@@ -222,6 +222,11 @@ func (a *App) AddSource(path string) (skillmgr.Inventory, error) {
 				return a.inventory, nil
 			}
 		}
+		if store := a.currentSyncStoreLocked(); store != nil {
+			if err := store.RestoreRepository(repository.RepoID); err != nil {
+				return skillmgr.Inventory{}, err
+			}
+		}
 		a.config.Repositories = append(a.config.Repositories, repository)
 		if err := a.persistAndRefreshLocked(); err != nil {
 			return skillmgr.Inventory{}, err
@@ -238,21 +243,19 @@ func (a *App) AddRepository(path string) (skillmgr.Inventory, error) {
 func (a *App) RemoveSource(sourceID string) (skillmgr.Inventory, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	nextRepos := a.config.Repositories[:0]
-	removedRepo := false
+	repoID := sourceID
 	for _, repository := range a.config.Repositories {
 		if repository.ID == sourceID || repository.RepoID == sourceID {
-			removedRepo = true
-			continue
+			repoID = repository.RepoID
 		}
-		nextRepos = append(nextRepos, repository)
 	}
-	a.config.Repositories = nextRepos
-	if removedRepo {
-		if err := a.persistAndRefreshLocked(); err != nil {
+	if store := a.currentSyncStoreLocked(); store != nil {
+		if err := store.DeleteRepository(repoID); err != nil {
 			return skillmgr.Inventory{}, err
 		}
-		return a.inventory, nil
+	}
+	if err := a.removeRepositoryLocallyLocked(repoID); err != nil {
+		return skillmgr.Inventory{}, err
 	}
 	next := a.config.Sources[:0]
 	for _, source := range a.config.Sources {
@@ -265,6 +268,70 @@ func (a *App) RemoveSource(sourceID string) (skillmgr.Inventory, error) {
 		return skillmgr.Inventory{}, err
 	}
 	return a.inventory, nil
+}
+
+// Resolve parent aliases even when the final skill directory no longer exists.
+func resolveExistingParent(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	parent := filepath.Dir(path)
+	if parent == path {
+		return path
+	}
+	return filepath.Join(resolveExistingParent(parent), filepath.Base(path))
+}
+
+// Only remove symlinks whose destination is inside this repository. Never remove real directories.
+func (a *App) removeRepositoryLocallyLocked(repoID string) error {
+	for _, repository := range a.config.Repositories {
+		if repository.RepoID != repoID {
+			continue
+		}
+		for _, targetDir := range a.config.TargetDirs {
+			entries, err := os.ReadDir(targetDir)
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			for _, entry := range entries {
+				if entry.Type()&os.ModeSymlink == 0 {
+					continue
+				}
+				link := filepath.Join(targetDir, entry.Name())
+				destination, err := os.Readlink(link)
+				if err != nil {
+					return err
+				}
+				if !filepath.IsAbs(destination) {
+					destination = filepath.Join(targetDir, destination)
+				}
+				root := resolveExistingParent(repository.Path)
+				destination = resolveExistingParent(destination)
+				relative, err := filepath.Rel(root, destination)
+				if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+					if err := os.Remove(link); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	next := make([]skillmgr.RepositoryConfig, 0, len(a.config.Repositories))
+	for _, repository := range a.config.Repositories {
+		if repository.RepoID != repoID {
+			next = append(next, repository)
+		}
+	}
+	a.config.Repositories = next
+	for id := range a.config.SkillEnabled {
+		if strings.HasPrefix(id, "git:"+repoID+"//") {
+			delete(a.config.SkillEnabled, id)
+		}
+	}
+	return nil
 }
 
 func (a *App) RemoveRepository(repoID string) (skillmgr.Inventory, error) {
@@ -1111,6 +1178,21 @@ func (a *App) refreshLocked(ctx context.Context) error {
 	}
 	if _, err := os.Stat(syncStore.Path()); errors.Is(err, os.ErrNotExist) {
 		if err := syncStore.Save(syncDocument); err != nil {
+			return err
+		}
+	}
+	for repoID := range syncDocument.RemovedRepositories {
+		if err := a.removeRepositoryLocallyLocked(repoID); err != nil {
+			return err
+		}
+		for id, record := range syncDocument.Skills {
+			if record.Source.Provider == skillmgr.GitProvider && record.Source.ID == repoID {
+				delete(syncDocument.Skills, id)
+			}
+		}
+	}
+	if len(syncDocument.RemovedRepositories) > 0 {
+		if err := a.store.Save(a.config); err != nil {
 			return err
 		}
 	}

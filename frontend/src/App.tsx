@@ -3314,7 +3314,7 @@ function RemoveSourceModal({
     <Modal title="Remove Repository" onClose={onClose}>
       <div className="space-y-4">
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          This only removes the local mapping from Skill Manager. Files, sync records, and existing symlinks will not be deleted.
+          This removes the repository mapping, shared skill records, and tool symlinks pointing into this repository. Other devices running this version will apply the removal after syncing and refreshing. Original repository files are kept.
         </div>
         <div>
           <div className="text-sm font-medium">{repositoryItemTitle(source)}</div>
@@ -3324,7 +3324,7 @@ function RemoveSourceModal({
           <Button variant="ghost" onClick={onClose} disabled={removing} title="Close this dialog and keep the source mapped.">
             Cancel
           </Button>
-          <Button title="Remove this source mapping from Skill Manager without deleting source files." onClick={remove} disabled={removing}>
+          <Button title="Remove this repository, its shared skill records, and matching tool symlinks." onClick={remove} disabled={removing}>
             {removing ? "Removing…" : "Remove"}
           </Button>
         </div>

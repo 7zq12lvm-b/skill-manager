@@ -16,17 +16,18 @@ import (
 
 const SyncFileName = "skillManager.db"
 
-const syncSchemaVersion = 3
+const syncSchemaVersion = 4
 
 type SyncStore struct {
 	path string
 }
 
 type SyncDocument struct {
-	Version  int                        `json:"version"`
-	LLM      SyncLLMConfig              `json:"llm,omitempty"`
-	Profiles map[string]SkillProfile    `json:"profiles,omitempty"`
-	Skills   map[string]SyncSkillRecord `json:"skills"`
+	RemovedRepositories map[string]bool            `json:"removedRepositories,omitempty"`
+	Version             int                        `json:"version"`
+	LLM                 SyncLLMConfig              `json:"llm,omitempty"`
+	Profiles            map[string]SkillProfile    `json:"profiles,omitempty"`
+	Skills              map[string]SyncSkillRecord `json:"skills"`
 }
 
 type SyncLLMConfig struct {
@@ -122,6 +123,17 @@ func (s *SyncStore) Load() (SyncDocument, error) {
 
 	row := tx.QueryRow(`SELECT base_url, api_key, model, temperature, max_tokens FROM llm_config WHERE id = 1`)
 	if err := row.Scan(&document.LLM.BaseURL, &document.LLM.APIKey, &document.LLM.Model, &document.LLM.Temperature, &document.LLM.MaxTokens); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return document, err
+	}
+	document.RemovedRepositories = map[string]bool{}
+	if err := visitRowsTx(tx, `SELECT source_id FROM removed_repositories`, func(rows *sql.Rows) error {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		document.RemovedRepositories[id] = true
+		return nil
+	}); err != nil {
 		return document, err
 	}
 	if err := loadProfilesTx(tx, &document); err != nil {
@@ -365,6 +377,32 @@ func (s *SyncStore) DeleteSkill(syncID string) error {
 	})
 }
 
+// DeleteRepository keeps a deletion marker so another device cannot reseed the source.
+func (s *SyncStore) DeleteRepository(repoID string) error {
+	db, err := s.open()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return withTransaction(db, func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO removed_repositories(source_id) VALUES(?)`, repoID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`DELETE FROM skills WHERE provider = ? AND source_id = ?`, GitProvider, repoID)
+		return err
+	})
+}
+
+func (s *SyncStore) RestoreRepository(repoID string) error {
+	db, err := s.open()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	_, err = db.Exec(`DELETE FROM removed_repositories WHERE source_id = ?`, repoID)
+	return err
+}
+
 func (s *SyncStore) SaveLLMConfig(config SyncLLMConfig) error {
 	db, err := s.open()
 	if err != nil {
@@ -459,6 +497,9 @@ func (s *SyncStore) open() (*sql.DB, error) {
 	} else if err := prepareSyncDatabase(db); err != nil {
 		return closeWithError(err)
 	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS removed_repositories (source_id TEXT PRIMARY KEY)`); err != nil {
+		return closeWithError(err)
+	}
 	var journalMode string
 	if err := db.QueryRow(`PRAGMA journal_mode=DELETE`).Scan(&journalMode); err != nil {
 		return closeWithError(err)
@@ -485,6 +526,7 @@ func ensureSchema(queryer rowQueryer) error {
 }
 
 const syncSchema = `
+CREATE TABLE IF NOT EXISTS removed_repositories (source_id TEXT PRIMARY KEY);
 CREATE TABLE llm_config (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   base_url TEXT NOT NULL,
@@ -518,7 +560,7 @@ CREATE TABLE profiles (
   source_hash TEXT NOT NULL,
   error TEXT NOT NULL
 );
-PRAGMA user_version = 3;`
+PRAGMA user_version = 4;`
 
 func prepareSyncDatabase(db *sql.DB) error {
 	version, legacy, err := inspectSyncSchemaVersion(db)
@@ -528,13 +570,30 @@ func prepareSyncDatabase(db *sql.DB) error {
 	switch {
 	case !legacy && version == syncSchemaVersion:
 		return nil
+	case !legacy && version == 3:
+		return migrateCompactSyncDatabaseV3(db)
 	case !legacy && version == 2:
-		return migrateCompactSyncDatabaseV2(db)
+		if err := migrateCompactSyncDatabaseV2(db); err != nil {
+			return err
+		}
+		return migrateCompactSyncDatabaseV3(db)
 	case legacy && (version == 1 || version == 2):
 		return migrateLegacySyncDatabase(db, version == 2)
 	default:
 		return fmt.Errorf("unsupported sync database schema version %d; expected %d", version, syncSchemaVersion)
 	}
+}
+
+func migrateCompactSyncDatabaseV3(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS removed_repositories (source_id TEXT PRIMARY KEY); PRAGMA user_version = 4;`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func migrateCompactSyncDatabaseV2(db *sql.DB) error {
@@ -670,6 +729,16 @@ func insertProfileIfMissingTx(tx *sql.Tx, syncID string, profile SkillProfile) e
 }
 
 func upsertSkillTx(tx *sql.Tx, record SyncSkillRecord) error {
+	var removed int
+	if record.Source.Provider == GitProvider {
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM removed_repositories WHERE source_id = ?`, record.Source.ID).Scan(&removed); err != nil {
+			return err
+		}
+		if removed > 0 {
+			return fmt.Errorf("repository has been removed: %s", record.Source.ID)
+		}
+	}
+
 	record = normalizeSyncSkillRecord(record)
 	syncID := syncRecordID(record)
 	if syncID == "" {

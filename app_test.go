@@ -566,3 +566,96 @@ func TestSkillSwitchesAreDeviceLocal(t *testing.T) {
 	check(a, true)
 	check(b, false)
 }
+
+func TestRemoveSourcePropagatesToAnotherDevice(t *testing.T) {
+	root := t.TempDir()
+	repoID := "example.com/me/removed"
+	syncFolder := filepath.Join(root, "sync")
+	makeDevice := func(name string) *App {
+		base := filepath.Join(root, name)
+		repository := filepath.Join(base, "repository")
+		source := filepath.Join(repository, "review")
+		target := filepath.Join(base, "target")
+		for _, dir := range []string{source, target, filepath.Join(target, "real-folder")} {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("# Review\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"review", "old-name"} {
+			if err := os.Symlink(source, filepath.Join(target, name)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.Symlink(filepath.Join(repository, "missing"), filepath.Join(target, "broken")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(base, filepath.Join(target, "unrelated")); err != nil {
+			t.Fatal(err)
+		}
+		config := skillmgr.DefaultConfig()
+		config.Scan.WatchSourceFolders = false
+		config.TargetDirs = []string{target}
+		config.Sync.Folder = syncFolder
+		config.Repositories = []skillmgr.RepositoryConfig{{ID: "local-id", RepoID: repoID, Path: repository, Enabled: true}}
+		return &App{ctx: context.Background(), config: config, store: skillmgr.NewConfigStore(filepath.Join(base, "config.json")), service: skillmgr.NewService()}
+	}
+	first, second := makeDevice("first"), makeDevice("second")
+	store := skillmgr.NewSyncStore(skillmgr.SyncPathFromFolder(syncFolder))
+	record := skillmgr.SyncSkillRecord{TargetName: "review", Profile: &skillmgr.SkillProfile{SummaryZh: "Review"}, Source: skillmgr.SyncSource{Provider: skillmgr.GitProvider, ID: repoID, Locator: skillmgr.SourceLocator{Subpath: "review"}}}
+	if err := store.UpsertSkill(record); err != nil {
+		t.Fatal(err)
+	}
+	unrelated := record
+	unrelated.Source.ID = "example.com/me/kept"
+	if err := store.UpsertSkill(unrelated); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.RemoveSource("local-id"); err != nil {
+		t.Fatal(err)
+	}
+	// The other device has not opened/refreshed yet.
+	if _, err := os.Lstat(filepath.Join(second.config.TargetDirs[0], "review")); err != nil {
+		t.Fatal(err)
+	}
+	if err := second.refreshLocked(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := second.refreshLocked(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, app := range []*App{first, second} {
+		if len(app.config.Repositories) != 0 {
+			t.Fatal("repository mapping survived")
+		}
+		target := app.config.TargetDirs[0]
+		for _, name := range []string{"review", "old-name", "broken"} {
+			if _, err := os.Lstat(filepath.Join(target, name)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("link %s survived: %v", name, err)
+			}
+		}
+		for _, path := range []string{filepath.Join(target, "real-folder"), filepath.Join(target, "unrelated"), filepath.Join(filepath.Dir(target), "repository", "review", "SKILL.md")} {
+			if _, err := os.Lstat(path); err != nil {
+				t.Fatalf("unrelated or original file removed: %s: %v", path, err)
+			}
+		}
+	}
+	document, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Skills) != 1 || len(document.Profiles) != 1 || !document.RemovedRepositories[repoID] {
+		t.Fatalf("unexpected shared state: %#v", document)
+	}
+	if err := store.UpsertSkill(record); err == nil {
+		t.Fatal("stale device resurrected deleted repository")
+	}
+	if err := store.RestoreRepository(repoID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertSkill(record); err != nil {
+		t.Fatalf("explicit restore failed: %v", err)
+	}
+}
