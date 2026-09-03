@@ -1,0 +1,33 @@
+app.go
+  s_4db4f8175d3025::t_8f8911b358cfce 775,800,825,952,1123-1146,1155,1286-1306
+  s_4db4f8175d3025::t_630242c28e90bf 370,504,544,547,660,700,703,723,1312
+app_test.go
+  s_4db4f8175d3025::t_8f8911b358cfce 469-470,474-568
+  s_4db4f8175d3025::t_58110d9f50441c 99-109,163-172,471-473
+README.md
+  s_4db4f8175d3025::t_a1788c21af395b 52-55
+frontend/wailsjs/go/models.ts
+  s_4db4f8175d3025::t_964ee87b4b1165 418,434
+internal/service.go
+  s_4db4f8175d3025::t_edeb1ea3de89fc 525,528-533,566,588
+internal/service_test.go
+  s_4db4f8175d3025::t_7096e78f541baf 685,709
+internal/types.go
+  s_4db4f8175d3025::t_003b83358377e0 23,194
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "780941a32e1582fffa080fe48ce86b5302e75da7",
+  "prompts": {},
+  "sessions": {
+    "s_4db4f8175d3025": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a065f5-6338-79d1-876c-f6cf34953e98",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "mingqiang <baimingqiang1@xiaohongshu.com>"
+    }
+  }
+}
