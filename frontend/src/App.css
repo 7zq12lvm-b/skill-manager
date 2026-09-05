@@ -297,6 +297,20 @@
   border-radius: 999px;
 }
 
+.summary-item:hover {
+  border-color: currentColor;
+}
+
+.summary-item[aria-pressed="true"] {
+  border-color: currentColor;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.summary-item:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
 .summary-item--slate {
   border-color: var(--sm-line);
   background: #f1f4f3;

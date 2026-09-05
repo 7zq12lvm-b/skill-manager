@@ -105,6 +105,8 @@ const TAG_TONES = [
   { backgroundColor: "#f3ecdf", borderColor: "#d8bd90", color: "#705226" },
 ] as const;
 
+type SummaryFilter = "all" | "enabled" | "conflict" | "invalid";
+
 function App() {
   const {
     inventory,
@@ -195,6 +197,7 @@ function App() {
   const [generatingProfileIds, setGeneratingProfileIds] = useState<Set<string>>(() => new Set());
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [starredOnly, setStarredOnly] = useState(false);
+  const [summaryFilter, setSummaryFilter] = useState<SummaryFilter | null>(null);
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(() => new Set());
   const [tagPicker, setTagPicker] = useState<TagPickerState>();
   const [noteEditor, setNoteEditor] = useState<NoteEditorState>();
@@ -216,6 +219,7 @@ function App() {
 
   useEffect(() => {
     const unsubscribe = EventsOn("tray:search", () => {
+      setSummaryFilter(null);
       setSelectedSourceId("all");
       setStatusFilter("all");
       setSelectedTags([]);
@@ -265,6 +269,12 @@ function App() {
 
   const filteredSkills = useMemo(() => {
     const skills = inventory?.skills ?? [];
+    if (summaryFilter !== null) {
+      return skills.filter((skill) =>
+        summaryFilter === "all" ||
+        (summaryFilter === "enabled" ? skill.isActive : skill.status === summaryFilter),
+      );
+    }
     const normalizedQuery = query.trim().toLowerCase();
     return skills.filter((skill) => {
       const matchesSource =
@@ -281,7 +291,7 @@ function App() {
         (skill.tags ?? []).some((tag) => tag.toLowerCase().includes(normalizedQuery));
       return matchesSource && matchesStatus && matchesQuery && matchesTags && matchesStarred;
     });
-  }, [inventory?.skills, query, selectedSourceId, selectedTagSet, starredOnly, statusFilter]);
+  }, [inventory?.skills, query, selectedSourceId, selectedTagSet, starredOnly, statusFilter, summaryFilter]);
 
   const selectedSkill =
     filteredSkills.find((skill) => skill.id === selectedSkillId) ??
@@ -374,7 +384,19 @@ function App() {
     setAddSourceOpen(false);
   }
 
+  function selectSummaryFilter(filter: SummaryFilter) {
+    setSelectedSourceId("all");
+    setStatusFilter("all");
+    setQuery("");
+    setSelectedTags([]);
+    setStarredOnly(false);
+    setSummaryFilter(filter);
+    setCompactView("skills");
+    setRepositoryDrawerOpen(false);
+  }
+
   function toggleTagFilter(tag: string) {
+    setSummaryFilter(null);
     setSelectedSourceId("all");
     setSelectedTags((current) =>
       current.includes(tag)
@@ -523,6 +545,7 @@ function App() {
   }
 
   function selectRepository(sourceId: string) {
+    setSummaryFilter(null);
     setSelectedSourceId(sourceId);
     setRepositoryDrawerOpen(false);
     if (workbenchLayout === "compact") {
@@ -571,7 +594,7 @@ function App() {
               Sources scan into a managed target. Conflicts stay visible until you choose the active skill.
             </p>
           </div>
-          {inventory && <SummaryBar summary={inventory.summary} />}
+          {inventory && <SummaryBar summary={inventory.summary} selected={summaryFilter} onSelect={selectSummaryFilter} />}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button
@@ -733,7 +756,7 @@ function App() {
                   name="skill-search"
                   ref={skillSearchRef}
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => { setSummaryFilter(null); setQuery(event.target.value); }}
                   placeholder="Search Skill…"
                   className="h-9 w-full rounded-md border border-input bg-white pl-8 pr-3 text-sm"
                 />
@@ -742,7 +765,7 @@ function App() {
                 aria-label="Filter by source"
                 name="source-filter"
                 value={selectedSourceId}
-                onChange={(event) => setSelectedSourceId(event.target.value)}
+                onChange={(event) => { setSummaryFilter(null); setSelectedSourceId(event.target.value); }}
                 className="h-9 min-w-[150px] flex-1 rounded-md border border-input bg-white px-2 text-sm sm:flex-none"
               >
                 <option value="all">Any source</option>
@@ -761,7 +784,7 @@ function App() {
                 aria-label="Filter by status"
                 name="status-filter"
                 value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
+                onChange={(event) => { setSummaryFilter(null); setStatusFilter(event.target.value); }}
                 className="h-9 min-w-[130px] flex-1 rounded-md border border-input bg-white px-2 text-sm sm:flex-none"
               >
                 <option value="all">Any status</option>
@@ -779,7 +802,7 @@ function App() {
                     ? "border-amber-400 bg-amber-50 text-amber-800"
                     : "border-input bg-white text-slate-600 hover:bg-amber-50 hover:text-amber-800",
                 )}
-                onClick={() => setStarredOnly((current) => !current)}
+                onClick={() => { setSummaryFilter(null); setStarredOnly((current) => !current); }}
                 title={starredOnly ? "Show all skills again." : "Show only starred skills."}
                 type="button"
               >
@@ -1443,13 +1466,17 @@ function CompactWorkbenchTabs({
   );
 }
 
-function SummaryBar({ summary }: { summary: skillmgr.Summary }) {
+function SummaryBar({ summary, selected, onSelect }: {
+  summary: skillmgr.Summary;
+  selected: SummaryFilter | null;
+  onSelect: (filter: SummaryFilter) => void;
+}) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
-      <SummaryItem label="Found" value={summary.skillsFound} />
-      <SummaryItem label="Enabled" value={summary.enabled} tone="emerald" />
-      <SummaryItem label="Conflicts" value={summary.conflicts} tone="amber" />
-      <SummaryItem label="Invalid" value={summary.invalid} tone="rose" />
+      <SummaryItem selected={selected === "all"} onClick={() => onSelect("all")} label="Found" value={summary.skillsFound} />
+      <SummaryItem selected={selected === "enabled"} onClick={() => onSelect("enabled")} label="Enabled" value={summary.enabled} tone="emerald" />
+      <SummaryItem selected={selected === "conflict"} onClick={() => onSelect("conflict")} label="Conflicts" value={summary.conflicts} tone="amber" />
+      <SummaryItem selected={selected === "invalid"} onClick={() => onSelect("invalid")} label="Invalid" value={summary.invalid} tone="rose" />
     </div>
   );
 }
@@ -1532,7 +1559,13 @@ function LoadingOverlay({ label }: { label: string }) {
   );
 }
 
-function SummaryItem({ label, value, tone = "slate" }: { label: string; value: number; tone?: string }) {
+function SummaryItem({ label, value, tone = "slate", selected, onClick }: {
+  label: string;
+  value: number;
+  tone?: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
   const tones: Record<string, string> = {
     slate: "summary-item--slate",
     emerald: "summary-item--emerald",
@@ -1540,9 +1573,15 @@ function SummaryItem({ label, value, tone = "slate" }: { label: string; value: n
     rose: "summary-item--rose",
   };
   return (
-    <span className={cn("summary-item rounded-md px-2 py-1 font-medium", tones[tone])}>
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onClick}
+      title={`Show ${label === "Found" ? "all" : label === "Conflicts" ? "conflicting" : label.toLowerCase()} skills and clear other filters.`}
+      className={cn("summary-item rounded-md px-2 py-1 font-medium", tones[tone])}
+    >
       {value} {label}
-    </span>
+    </button>
   );
 }
 
